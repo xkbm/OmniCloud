@@ -37,9 +37,9 @@ try {
 	throw new Error(`Failed to load OmniCloud database snapshot from Neon: ${error.message}`);
 }
 
-// better-sqlite3 restores a serialized database by passing the buffer to the
-// constructor; Database.deserialize() is not part of its JavaScript API.
-const rawDb = snapshot ? new Database(snapshot) : new Database(':memory:');
+// Restore a serialized better-sqlite3 database into an in-memory instance.
+const rawDb = new Database(':memory:');
+if (snapshot) rawDb.deserialize(snapshot);
 rawDb.pragma('foreign_keys = ON');
 
 export const LOCAL_USER_ID = 'local-default-user';
