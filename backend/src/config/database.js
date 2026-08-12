@@ -37,9 +37,8 @@ try {
 	throw new Error(`Failed to load OmniCloud database snapshot from Neon: ${error.message}`);
 }
 
-// Restore a serialized better-sqlite3 database into an in-memory instance.
-const rawDb = new Database(':memory:');
-if (snapshot) rawDb.deserialize(snapshot);
+// better-sqlite3 opens a serialized database by passing the Buffer to the constructor.
+const rawDb = snapshot ? new Database(snapshot) : new Database(':memory:');
 rawDb.pragma('foreign_keys = ON');
 
 export const LOCAL_USER_ID = 'local-default-user';
