@@ -102,6 +102,35 @@
 		vertical-align: top;
 	}
 
+	aside a[href="/quota"] {
+		width: 100%;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	aside a[href="/quota"] > div {
+		min-width: 0;
+	}
+
+	aside a[href="/quota"] > div > div:first-child {
+		min-width: 0;
+	}
+
+	aside a[href="/quota"] > div > div:first-child > div:first-child {
+		min-width: 0;
+	}
+
+	aside a[href="/quota"] > div > div:first-child > span {
+		flex-shrink: 0;
+	}
+
+	aside a[href="/quota"] > p {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.truncate-marquee__track {
 			animation: none;
