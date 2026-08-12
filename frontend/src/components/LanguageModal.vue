@@ -1,7 +1,7 @@
 <script setup>
 import { IconLanguage, IconX } from '@tabler/icons-vue';
 import { useI18n } from 'vue-i18n';
-import idFlag from '../assets/id.svg';
+import esFlag from '../assets/es.svg';
 import usFlag from '../assets/us.svg';
 import { useSettingsStore } from '../stores/settings';
 
@@ -15,7 +15,7 @@ const { t } = useI18n();
 const settingsStore = useSettingsStore();
 
 const languages = [
-	{ code: 'id', label: 'Bahasa Indonesia', flag: idFlag },
+	{ code: 'es', label: 'Español', flag: esFlag },
 	{ code: 'en', label: 'English', flag: usFlag },
 ];
 
