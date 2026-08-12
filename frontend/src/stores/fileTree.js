@@ -3,10 +3,10 @@ import { api } from '../services/api';
 
 function buildBreadcrumbs(currentPath) {
 	const normalized = currentPath === '/' ? '/' : currentPath.replace(/^\/+|\/+$/g, '');
-	if (normalized === '/') return [{ label: 'Root', path: '/' }];
+	if (normalized === '/') return [{ label: 'Mi Drive', path: '/' }];
 
 	const segments = normalized.split('/').filter(Boolean);
-	const breadcrumbs = [{ label: 'Root', path: '/' }];
+	const breadcrumbs = [{ label: 'Mi Drive', path: '/' }];
 	let pathAccumulator = '';
 
 	segments.forEach((segment) => {
@@ -27,7 +27,7 @@ export const useFileTreeStore = defineStore('fileTree', {
 		pendingHighlightId: null,
 		files: [],
 		filteredFiles: [],
-		breadcrumbs: [{ label: 'Root', path: '/' }],
+		breadcrumbs: [{ label: 'Mi Drive', path: '/' }],
 		searchTerm: '',
 		isLoading: false,
 		error: null,
