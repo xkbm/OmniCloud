@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue';
-import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { IconLoader2, IconMail, IconLock } from '@tabler/icons-vue';
 import { useAuthStore } from '../../stores/auth';
 import AuthLayout from './AuthLayout.vue';
@@ -30,11 +30,6 @@ async function handleSubmit() {
 		const redirect = router.currentRoute.value.query.redirect || '/';
 		router.replace(String(redirect));
 	}
-}
-
-function goRegister() {
-	authStore.error = null;
-	router.push({ name: 'register', query: router.currentRoute.value.query });
 }
 </script>
 
@@ -66,11 +61,6 @@ function goRegister() {
 				<span>{{ isBusy ? t('auth.signingIn') : t('auth.loginCta') }}</span>
 			</button>
 		</form>
-
-		<p class="auth-switch">
-			{{ t('auth.noAccount') }}
-			<button type="button" @click="goRegister">{{ t('auth.registerCta') }}</button>
-		</p>
 	</AuthLayout>
 </template>
 
