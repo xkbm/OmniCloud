@@ -1,5 +1,8 @@
 import Database from 'better-sqlite3';
 import { Pool } from 'pg';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const SNAPSHOT_TABLE = 'public.omnicloud_sqlite_state';
@@ -37,8 +40,22 @@ try {
 	throw new Error(`Failed to load OmniCloud database snapshot from Neon: ${error.message}`);
 }
 
-// better-sqlite3 opens a serialized database by passing the Buffer to the constructor.
-const rawDb = snapshot ? new Database(snapshot) : new Database(':memory:');
+// better-sqlite3 opens database files by path. Restore the Neon snapshot into
+// a temporary local file, then use the normal SQLite API so the application
+// can keep its original synchronous query code unchanged.
+let sqlitePath = null;
+if (snapshot) {
+	sqlitePath = path.join(os.tmpdir(), `omnicloud-${process.pid}.db`);
+	try {
+		fs.rmSync(sqlitePath, { force: true });
+		fs.writeFileSync(sqlitePath, snapshot, { mode: 0o600 });
+	} catch (error) {
+		await pool.end();
+		throw new Error(`Failed to restore OmniCloud database snapshot locally: ${error.message}`);
+	}
+}
+
+const rawDb = new Database(sqlitePath || ':memory:');
 rawDb.pragma('foreign_keys = ON');
 
 export const LOCAL_USER_ID = 'local-default-user';
@@ -241,6 +258,14 @@ async function flushAndClose() {
 
 	await pool.end();
 	rawDb.close();
+
+	if (sqlitePath) {
+		try {
+			fs.rmSync(sqlitePath, { force: true });
+		} catch (error) {
+			console.error('Failed to remove temporary OmniCloud database file:', error);
+		}
+	}
 }
 
 process.once('SIGTERM', () => {
