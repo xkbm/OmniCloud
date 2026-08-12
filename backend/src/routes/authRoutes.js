@@ -1,12 +1,9 @@
 import { Router } from 'express';
 import { env } from '../config/env.js';
 import {
-	clearUserSessions,
-	createSession,
 	destroySession,
 	getAuthSummary,
 	loginHostedUser,
-	registerHostedUser,
 } from '../services/authService.js';
 
 const router = Router();
@@ -25,17 +22,8 @@ router.get('/auth/me', (req, res) => {
 	res.json({ data: getAuthSummary(req.user) });
 });
 
-router.post('/auth/register', (req, res, next) => {
-	try {
-		const user = registerHostedUser(req.body || {});
-		clearUserSessions(user.id);
-		const session = createSession(user.id);
-		setAuthCookie(res, session.token);
-		res.status(201).json({ data: getAuthSummary(user) });
-	} catch (error) {
-		next(error);
-	}
-});
+// Public registration is intentionally disabled. Account creation must be
+// performed out-of-band by the administrator.
 
 router.post('/auth/login', (req, res, next) => {
 	try {
