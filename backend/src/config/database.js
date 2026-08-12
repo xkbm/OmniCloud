@@ -33,11 +33,13 @@ try {
 			: Buffer.from(result.rows[0].db);
 	}
 } catch (error) {
-		await pool.end();
-		throw new Error(`Failed to load OmniCloud database snapshot from Neon: ${error.message}`);
+	await pool.end();
+	throw new Error(`Failed to load OmniCloud database snapshot from Neon: ${error.message}`);
 }
 
-const rawDb = snapshot ? Database.deserialize(snapshot) : new Database(':memory:');
+// better-sqlite3 restores a serialized database by passing the buffer to the
+// constructor; Database.deserialize() is not part of its JavaScript API.
+const rawDb = snapshot ? new Database(snapshot) : new Database(':memory:');
 rawDb.pragma('foreign_keys = ON');
 
 export const LOCAL_USER_ID = 'local-default-user';
@@ -167,7 +169,7 @@ function schedulePersist() {
 		persistTimer = null;
 		void persistSnapshot().catch(() => {});
 	}, 100);
-};
+}
 
 function wrapStatement(statement) {
 	return new Proxy(statement, {
