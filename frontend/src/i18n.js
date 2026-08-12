@@ -1,17 +1,24 @@
 import { createI18n } from 'vue-i18n';
 import en from './locales/en.json';
-import id from './locales/id.json';
+import es from './locales/es.json';
 
-const SUPPORTED_LOCALES = ['id', 'en'];
-const DEFAULT_LOCALE = 'id';
+const SUPPORTED_LOCALES = ['es', 'en'];
+const DEFAULT_LOCALE = 'es';
 
 function detectLocale() {
 	const stored = window.localStorage.getItem('omnicloud-language');
+	if (stored === 'id') {
+		window.localStorage.setItem('omnicloud-language', 'es');
+		return 'es';
+	}
 	if (stored && SUPPORTED_LOCALES.includes(stored)) {
 		return stored;
 	}
 
 	const browserLang = navigator.language.split('-')[0];
+	if (browserLang === 'id') {
+		return 'es';
+	}
 	if (SUPPORTED_LOCALES.includes(browserLang)) {
 		return browserLang;
 	}
@@ -25,7 +32,7 @@ export const i18n = createI18n({
 	fallbackLocale: 'en',
 	messages: {
 		en,
-		id,
+		es,
 	},
 });
 
