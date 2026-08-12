@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { env } from '../config/env.js';
 import {
+	createSession,
 	destroySession,
 	getAuthSummary,
 	loginHostedUser,
