@@ -4,7 +4,6 @@ import { LOCAL_USER_ID } from '../config/database.js';
 import { getActiveAccounts, markAccountStatus, updateAccountStorage } from './accountService.js';
 import { createAdapter } from './adapterRegistry.js';
 import { clearFilesForAccount, replaceFilesForAccount } from './fileService.js';
-import { markAccountSyncFresh, markAccountSyncStale } from './syncStateService.js';
 import { isAuthError, withRetry } from '../utils/providerErrors.js';
 
 async function fetchAccountSnapshot(account) {
@@ -37,8 +36,6 @@ async function fetchAccountSnapshot(account) {
 }
 
 function handleSyncFailure(account, error) {
-	markAccountSyncStale(account.user_id, account.id, error);
-
 	if (isAuthError(error)) {
 		clearFilesForAccount(account.user_id, account.id);
 		markAccountStatus(account.user_id, account.id, 'invalid_token');
@@ -79,7 +76,6 @@ export async function runDeltaSync(userId) {
 
 				replaceFilesForAccount(userId, account.id, remoteFiles);
 				updateAccountStorage(userId, account.id, storage.totalSpace, storage.usedSpace);
-				markAccountSyncFresh(userId, account.id);
 				changesDetected += remoteFiles.length;
 			} catch (error) {
 				handleSyncFailure(account, error);
@@ -128,7 +124,6 @@ export async function syncAccount(userId, account) {
 
 		replaceFilesForAccount(userId, account.id, remoteFiles);
 		updateAccountStorage(userId, account.id, storage.totalSpace, storage.usedSpace);
-		markAccountSyncFresh(userId, account.id);
 
 		return {
 			accountId: account.id,
