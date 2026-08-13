@@ -4,6 +4,7 @@ import { LOCAL_USER_ID } from '../config/database.js';
 import { getActiveAccounts, markAccountStatus, updateAccountStorage } from './accountService.js';
 import { createAdapter } from './adapterRegistry.js';
 import { clearFilesForAccount, replaceFilesForAccount } from './fileService.js';
+import { markAccountSyncFresh, markAccountSyncStale } from './syncStateService.js';
 import { isAuthError, withRetry } from '../utils/providerErrors.js';
 
 async function fetchAccountSnapshot(account) {
@@ -12,6 +13,15 @@ async function fetchAccountSnapshot(account) {
 			const adapter = createAdapter(account);
 			const remoteFiles = await adapter.fetchStructure();
 			const storage = await adapter.getStorageSummary();
+
+			if (!Array.isArray(remoteFiles)) {
+				throw new Error('Provider returned an invalid file structure');
+			}
+
+			if (!storage || typeof storage !== 'object') {
+				throw new Error('Provider returned an invalid storage summary');
+			}
+
 			return { remoteFiles, storage };
 		},
 		{
@@ -27,6 +37,8 @@ async function fetchAccountSnapshot(account) {
 }
 
 function handleSyncFailure(account, error) {
+	markAccountSyncStale(account.user_id, account.id, error);
+
 	if (isAuthError(error)) {
 		clearFilesForAccount(account.user_id, account.id);
 		markAccountStatus(account.user_id, account.id, 'invalid_token');
@@ -34,8 +46,11 @@ function handleSyncFailure(account, error) {
 		return;
 	}
 
+	// Do not leave a potentially stale catalog visible when the provider state
+	// cannot be confirmed. The next successful sync will repopulate it.
+	clearFilesForAccount(account.user_id, account.id);
 	console.error(
-		`Transient sync failure for account ${account.email} (kept connected):`,
+		`Transient sync failure for account ${account.email} (kept connected, catalog cleared until next successful sync):`,
 		error.message,
 	);
 }
@@ -64,6 +79,7 @@ export async function runDeltaSync(userId) {
 
 				replaceFilesForAccount(userId, account.id, remoteFiles);
 				updateAccountStorage(userId, account.id, storage.totalSpace, storage.usedSpace);
+				markAccountSyncFresh(userId, account.id);
 				changesDetected += remoteFiles.length;
 			} catch (error) {
 				handleSyncFailure(account, error);
@@ -112,15 +128,23 @@ export async function syncAccount(userId, account) {
 
 		replaceFilesForAccount(userId, account.id, remoteFiles);
 		updateAccountStorage(userId, account.id, storage.totalSpace, storage.usedSpace);
+		markAccountSyncFresh(userId, account.id);
 
 		return {
 			accountId: account.id,
 			filesSynced: remoteFiles.length,
 			totalSpace: storage.totalSpace,
 			usedSpace: storage.usedSpace,
+			syncFailed: false,
 		};
 	} catch (error) {
 		handleSyncFailure(account, error);
-		throw error;
+		return {
+			accountId: account.id,
+			filesSynced: 0,
+			totalSpace: Number(account.total_space || 0),
+			usedSpace: Number(account.used_space || 0),
+			syncFailed: true,
+		};
 	}
 }
