@@ -131,6 +131,19 @@
 		white-space: nowrap;
 	}
 
+	.mt-4.rounded-\[24px\] > .mb-3 {
+		min-width: 0;
+	}
+
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 {
+		min-width: 0;
+		flex: 1 1 auto;
+	}
+
+	.mt-4.rounded-\[24px\] > .mb-3 > span {
+		flex-shrink: 0;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.truncate-marquee__track {
 			animation: none;
