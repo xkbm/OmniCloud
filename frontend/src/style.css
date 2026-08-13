@@ -114,14 +114,24 @@
 
 	aside a[href="/quota"] > div > div:first-child {
 		min-width: 0;
+		gap: 0.5rem;
 	}
 
 	aside a[href="/quota"] > div > div:first-child > div:first-child {
 		min-width: 0;
+		flex: 1 1 auto;
 	}
 
-	aside a[href="/quota"] > div > div:first-child > span {
-		flex-shrink: 0;
+	aside a[href="/quota"] > div > div:first-child > div:first-child > span:last-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	aside a[href="/quota"] > div > div:first-child > span:last-child {
+		flex: 0 0 auto;
+		white-space: nowrap;
 	}
 
 	aside a[href="/quota"] > p {
@@ -133,6 +143,7 @@
 
 	.mt-4.rounded-\[24px\] > .mb-3 {
 		min-width: 0;
+		gap: 0.5rem;
 	}
 
 	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 {
@@ -140,8 +151,16 @@
 		flex: 1 1 auto;
 	}
 
-	.mt-4.rounded-\[24px\] > .mb-3 > span {
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:last-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.mt-4.rounded-\[24px\] > .mb-3 > span:last-child {
 		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
