@@ -131,6 +131,7 @@
 		aspect-ratio: 1 / 1;
 		display: grid;
 		place-items: center;
+		background: transparent !important;
 	}
 
 	aside a[href="/quota"] > div > div:first-child > div:first-child > span:first-child > svg {
@@ -184,6 +185,7 @@
 		aspect-ratio: 1 / 1;
 		display: grid;
 		place-items: center;
+		background: transparent !important;
 	}
 
 	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:first-child > svg {
