@@ -140,8 +140,10 @@
 		min-height: 20px;
 		max-width: 20px;
 		max-height: 20px;
-		display: block;
-		flex: 0 0 20px;
+		flex: 0 0 auto;
+		fill: none !important;
+		stroke: currentColor !important;
+		stroke-width: 2 !important;
 	}
 
 	aside a[href="/quota"] > div > div:first-child > div:first-child > span:last-child {
@@ -191,8 +193,10 @@
 		min-height: 20px;
 		max-width: 20px;
 		max-height: 20px;
-		display: block;
-		flex: 0 0 20px;
+		flex: 0 0 auto;
+		fill: none !important;
+		stroke: currentColor !important;
+		stroke-width: 2 !important;
 	}
 
 	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:last-child {
