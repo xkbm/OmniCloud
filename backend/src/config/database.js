@@ -15,11 +15,37 @@ const pool = new Pool({
 	connectionString: DATABASE_URL,
 	max: 2,
 	idleTimeoutMillis: 30_000,
-	connectionTimeoutMillis: 10_000,
+	connectionTimeoutMillis: 30_000,
 	ssl: DATABASE_URL.includes('sslmode=') ? undefined : { rejectUnauthorized: false },
 });
 
-await pool.query(`
+async function neonQueryWithRetry(query, values = [], options = {}) {
+	const retries = options.retries ?? 5;
+	const baseDelayMs = options.baseDelayMs ?? 1_000;
+	let lastError;
+
+	for (let attempt = 1; attempt <= retries; attempt += 1) {
+		try {
+			return await pool.query(query, values);
+		} catch (error) {
+			lastError = error;
+			if (attempt >= retries) break;
+
+			const delayMs = Math.min(baseDelayMs * 2 ** (attempt - 1), 10_000);
+			console.warn(
+				`Neon query failed (attempt ${attempt}/${retries}), retrying in ${delayMs}ms:`,
+				error?.message || error,
+			);
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
+	}
+
+	throw lastError;
+}
+
+await neonQueryWithRetry('SELECT 1');
+
+await neonQueryWithRetry(`
 	CREATE TABLE IF NOT EXISTS ${SNAPSHOT_TABLE} (
 		id INTEGER PRIMARY KEY,
 		db BYTEA NOT NULL,
@@ -29,7 +55,7 @@ await pool.query(`
 
 let snapshot = null;
 try {
-	const result = await pool.query(`SELECT db FROM ${SNAPSHOT_TABLE} WHERE id = 1`);
+	const result = await neonQueryWithRetry(`SELECT db FROM ${SNAPSHOT_TABLE} WHERE id = 1`);
 	if (result.rows[0]?.db) {
 		snapshot = Buffer.isBuffer(result.rows[0].db)
 			? result.rows[0].db
@@ -158,13 +184,13 @@ async function persistSnapshot() {
 
 	dirty = false;
 	const bytes = Buffer.from(rawDb.serialize());
-	persistInFlight = pool
-		.query(
+	persistInFlight = neonQueryWithRetry(
 			`INSERT INTO ${SNAPSHOT_TABLE} (id, db, updated_at)
 			 VALUES (1, $1, NOW())
 			 ON CONFLICT (id) DO UPDATE
 			 SET db = EXCLUDED.db, updated_at = EXCLUDED.updated_at`,
 			[bytes],
+			{ retries: 3, baseDelayMs: 1_000 },
 		)
 		.catch((error) => {
 			dirty = true;
