@@ -44,6 +44,24 @@ function createBatchId() {
 	return crypto.randomUUID();
 }
 
+function calculateBatchProgress(items) {
+	if (!items.length) return 0;
+
+	const totalBytes = items.reduce((sum, item) => sum + Math.max(0, Number(item.size) || 0), 0);
+	if (totalBytes > 0) {
+		const transferredBytes = items.reduce((sum, item) => {
+			const size = Math.max(0, Number(item.size) || 0);
+			const progress = Math.min(100, Math.max(0, Number(item.progress_percentage) || 0));
+			return sum + (size * progress) / 100;
+		}, 0);
+		return Math.round((transferredBytes / totalBytes) * 100);
+	}
+
+	return Math.round(
+		items.reduce((sum, item) => sum + Math.min(100, Math.max(0, Number(item.progress_percentage) || 0)), 0) / items.length,
+	);
+}
+
 export const useUploadQueueStore = defineStore('uploadQueue', {
 	state: () => ({
 		uploads: [],
@@ -53,8 +71,13 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 		totalProgress: (state) => {
 			const activeItems = state.uploads.filter((item) => !['completed', 'failed', 'cancelled'].includes(item.status));
 			if (!activeItems.length) return 0;
-			const total = activeItems.reduce((sum, item) => sum + item.progress_percentage, 0);
-			return Math.round(total / activeItems.length);
+
+			const latestBatchId = activeItems.find((item) => item.batchId)?.batchId;
+			const batchItems = latestBatchId
+				? state.uploads.filter((item) => item.batchId === latestBatchId)
+				: activeItems;
+
+			return calculateBatchProgress(batchItems);
 		},
 	},
 	actions: {
@@ -177,73 +200,73 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 			const batchTotal = downloadableFiles.length;
 
 			for (const file of downloadableFiles) {
-			const abortController = new AbortController();
+				const abortController = new AbortController();
 
-			const queueItem = this.registerOperation({
-				type: 'download',
-				name: file.display_name || file.file_name,
-				size: file.size || 0,
-				status: 'downloading',
-				abortController,
-				batchId,
-				batchTotal,
-			});
+				const queueItem = this.registerOperation({
+					type: 'download',
+					name: file.display_name || file.file_name,
+					size: file.size || 0,
+					status: 'downloading',
+					abortController,
+					batchId,
+					batchTotal,
+				});
 
-			try {
-				const response = await fetch(api.downloadUrl(file.id), { signal: abortController.signal });
-				if (!response.ok) {
-					const payload = await response.json().catch(() => ({ error: 'Download failed' }));
-					throw new Error(payload.error || 'Download failed');
-				}
-
-				const contentLength = Number(response.headers.get('Content-Length')) || file.size || 0;
-				const reader = response.body?.getReader();
-				const chunks = [];
-				let received = 0;
-
-				if (reader) {
-					while (true) {
-						if (abortController.signal.aborted) throw new DOMException('Download cancelled', 'AbortError');
-						const { done, value } = await reader.read();
-						if (done) break;
-						chunks.push(value);
-						received += value.length;
-						const percent = contentLength ? Math.min(99, Math.round((received / contentLength) * 100)) : 50;
-						this.updateUpload(queueItem.id, { progress_percentage: percent });
+				try {
+					const response = await fetch(api.downloadUrl(file.id), { signal: abortController.signal });
+					if (!response.ok) {
+						const payload = await response.json().catch(() => ({ error: 'Download failed' }));
+						throw new Error(payload.error || 'Download failed');
 					}
-				} else {
-					chunks.push(await response.blob());
-				}
 
-				const blob = chunks[0] instanceof Blob ? chunks[0] : new Blob(chunks);
-				const url = URL.createObjectURL(blob);
-				const link = document.createElement('a');
-				link.href = url;
-				link.download = file.display_name || file.file_name || 'download';
-				document.body.appendChild(link);
-				link.click();
-				link.remove();
-				URL.revokeObjectURL(url);
+					const contentLength = Number(response.headers.get('Content-Length')) || file.size || 0;
+					const reader = response.body?.getReader();
+					const chunks = [];
+					let received = 0;
 
-				this.updateUpload(queueItem.id, {
-					progress_percentage: 100,
-					status: 'completed',
-				});
-			} catch (error) {
-				if (isAbortError(error)) {
+					if (reader) {
+						while (true) {
+							if (abortController.signal.aborted) throw new DOMException('Download cancelled', 'AbortError');
+							const { done, value } = await reader.read();
+							if (done) break;
+							chunks.push(value);
+							received += value.length;
+							const percent = contentLength ? Math.min(99, Math.round((received / contentLength) * 100)) : 50;
+							this.updateUpload(queueItem.id, { progress_percentage: percent });
+						}
+					} else {
+						chunks.push(await response.blob());
+					}
+
+					const blob = chunks[0] instanceof Blob ? chunks[0] : new Blob(chunks);
+					const url = URL.createObjectURL(blob);
+					const link = document.createElement('a');
+					link.href = url;
+					link.download = file.display_name || file.file_name || 'download';
+					document.body.appendChild(link);
+					link.click();
+					link.remove();
+					URL.revokeObjectURL(url);
+
 					this.updateUpload(queueItem.id, {
-						status: 'cancelled',
-						error: null,
+						progress_percentage: 100,
+						status: 'completed',
 					});
-					return;
-				}
+				} catch (error) {
+					if (isAbortError(error)) {
+						this.updateUpload(queueItem.id, {
+							status: 'cancelled',
+							error: null,
+						});
+						return;
+					}
 
-				this.updateUpload(queueItem.id, {
-					status: 'failed',
-					error: error.message,
-				});
-				if (batchTotal === 1) throw error;
-			}
+					this.updateUpload(queueItem.id, {
+						status: 'failed',
+						error: error.message,
+					});
+					if (batchTotal === 1) throw error;
+				}
 			}
 		},
 		async uploadFiles(files, currentPath, onCompleted) {
