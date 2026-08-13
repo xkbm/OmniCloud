@@ -60,7 +60,7 @@ export function formatBytesStrict(value) {
 	return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-export function formatDate(value, locale = 'id-ID') {
+export function formatDate(value, locale = 'es-ES') {
 	if (!value) return '—';
 	return new Intl.DateTimeFormat(locale, {
 		day: 'numeric',
