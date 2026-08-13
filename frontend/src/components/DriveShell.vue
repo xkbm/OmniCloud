@@ -393,7 +393,7 @@ const profileLinks = [
 								<span>{{ t('sidebar.uploadFolder') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 							</button>
-					</div>
+						</div>
 					</div>
 
 					<nav class="flex flex-col gap-1">
@@ -453,24 +453,25 @@ const profileLinks = [
 						<component :is="props.currentSection === item.id ? item.activeIcon : item.icon" :size="18" :stroke="props.currentSection === item.id ? 0 : 2" class="shrink-0 transition-transform duration-200 group-hover:scale-110" :class="props.currentSection === item.id ? 'text-[#1a73e8] drop-shadow-sm dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'" />
 						<span>{{ item.label }}</span>
 					</RouterLink>
+				</nav>
 
-					<RouterLink to="/quota" class="sticky bottom-4 mt-auto block rounded-[24px] border border-[#dfe6f1] bg-white/70 p-4 text-[#202124] shadow-[0_12px_32px_rgba(60,64,67,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_40px_rgba(60,64,67,0.14)] dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800">
-						<div class="mb-3 flex items-center justify-between gap-3">
-							<div class="flex min-w-0 flex-1 items-center gap-2.5">
-								<span class="grid size-9 shrink-0 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
-									<IconCloud :size="18" :stroke="2" />
-								</span>
-								<span class="min-w-0 truncate text-sm font-semibold">{{ t('sidebar.storage') }}</span>
-							</div>
-							<span class="shrink-0 rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercentRounded }}%</span>
+				<RouterLink to="/quota" class="sticky bottom-4 mt-auto block rounded-[24px] border border-[#dfe6f1] bg-white/70 p-4 text-[#202124] shadow-[0_12px_32px_rgba(60,64,67,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_40px_rgba(60,64,67,0.14)] dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800">
+					<div class="mb-3 flex items-center justify-between gap-3">
+						<div class="flex items-center gap-2.5">
+							<span class="grid size-9 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
+								<IconCloud :size="18" :stroke="2" />
+							</span>
+							<span class="text-sm font-semibold">{{ t('sidebar.storage') }}</span>
 						</div>
+						<span class="rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercentRounded }}%</span>
+					</div>
 
-						<div class="mb-2 h-2 overflow-hidden rounded-full bg-[#dfe6f1] dark:bg-slate-700">
-							<div class="h-full rounded-full bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#06b6d4] transition-all" :style="{ width: `${storagePercent}%` }" />
-						</div>
+					<div class="mb-2 h-2 overflow-hidden rounded-full bg-[#dfe6f1] dark:bg-slate-700">
+						<div class="h-full rounded-full bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#06b6d4] transition-all" :style="{ width: `${storagePercent}%` }" />
+					</div>
 
-						<p class="text-xs leading-5 text-[#5f6368] dark:text-slate-400">{{ storageLabel }}</p>
-					</RouterLink>
+					<p class="text-xs leading-5 text-[#5f6368] dark:text-slate-400">{{ storageLabel }}</p>
+				</RouterLink>
 
 			</aside>
 
