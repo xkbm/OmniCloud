@@ -128,7 +128,7 @@ export function getCookieOptions() {
 	return {
 		httpOnly: true,
 		sameSite: 'lax',
-		secure: false,
+		secure: env.appMode === 'hosted',
 		path: '/',
 	};
 }
