@@ -406,7 +406,7 @@ const profileLinks = [
 					<div class="mt-4 rounded-[24px] border border-[#dfe6f1] bg-[#f8fafd] p-4 dark:border-slate-700 dark:bg-slate-800/80">
 						<div class="mb-3 flex items-center justify-between gap-3">
 							<div class="flex items-center gap-2.5">
-								<span class="grid size-9 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
+								<span class="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
 									<IconCloudFilled :size="18" :stroke="0" />
 								</span>
 								<span class="text-sm font-semibold">{{ t('sidebar.storage') }}</span>
@@ -449,7 +449,7 @@ const profileLinks = [
 				</div>
 
 				<nav class="-ml-4 -mr-3 mt-[18px] flex flex-col gap-0.5">
-					<RouterLink v-for="item in navItems" :key="item.label" :to="item.to" class="group relative mr-3 flex h-10 items-center gap-3.5 overflow-hidden rounded-r-[6px] px-6 text-[#202124] transition-all duration-200 dark:text-slate-100" :class="props.currentSection === item.id ? 'bg-[linear-gradient(90deg,rgba(211,227,253,0.98)_0%,rgba(238,245,255,0.94)_76%,rgba(238,245,255,0.14)_90%,rgba(238,245,255,0)_100%)] font-semibold text-[#174ea6] shadow-[inset_4px_0_0_#1a73e8] dark:bg-[linear-gradient(90deg,rgba(59,130,246,0.24)_0%,rgba(51,65,85,0.18)_76%,rgba(30,41,59,0.08)_90%,rgba(15,23,42,0)_100%)] dark:text-blue-200 dark:shadow-[inset_4px_0_0_#60a5fa]' : 'hover:bg-black/[0.03] dark:hover:bg-white/6'">
+					<RouterLink v-for="item in navItems" :key="item.label" :to="item.to" class="group relative mr-3 flex h-10 items-center gap-3.5 overflow-hidden rounded-r-[6px] px-6 text-[#202124] transition-all duration-200 dark:text-slate-100" :class="props.currentSection === item.id ? 'bg-[linear-gradient(90deg,rgba(211,227,253,0.98)_0%,rgba(238,245,255,0.94)_76%,rgba(238,245,255,0.14)_90%,rgba(238,245,255,0)_100%)] font-semibold text-[#174ea6] shadow-[inset_4px_0_0_#1a73e8] dark:bg-[linear-gradient(90deg,rgba(59,130,246,0.24)_0%,rgba(51,65,85,0.18)_76%,rgba(30,41,59,0.08)_90%,rgba(15,23,42,0.0)_100%)] dark:text-blue-200 dark:shadow-[inset_4px_0_0_#60a5fa]' : 'hover:bg-black/[0.03] dark:hover:bg-white/6'">
 						<component :is="props.currentSection === item.id ? item.activeIcon : item.icon" :size="18" :stroke="props.currentSection === item.id ? 0 : 2" class="shrink-0 transition-transform duration-200 group-hover:scale-110" :class="props.currentSection === item.id ? 'text-[#1a73e8] drop-shadow-sm dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'" />
 						<span>{{ item.label }}</span>
 					</RouterLink>
@@ -458,7 +458,7 @@ const profileLinks = [
 				<RouterLink to="/quota" class="sticky bottom-4 mt-auto block rounded-[24px] border border-[#dfe6f1] bg-white/70 p-4 text-[#202124] shadow-[0_12px_32px_rgba(60,64,67,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_40px_rgba(60,64,67,0.14)] dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800">
 					<div class="mb-3 flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2.5">
-							<span class="grid size-9 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
+							<span class="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
 								<IconCloud :size="18" :stroke="2" />
 							</span>
 							<span class="text-sm font-semibold">{{ t('sidebar.storage') }}</span>
