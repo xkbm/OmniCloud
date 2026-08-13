@@ -13,12 +13,26 @@ import { attachAuthContext } from './middleware/authMiddleware.js';
 export function createApp() {
 	const app = express();
 
+	app.disable('x-powered-by');
+
 	app.use(
 		cors({
 			origin: env.corsOrigin,
 			credentials: true,
 		}),
 	);
+
+	app.use((_req, res, next) => {
+		res.setHeader('X-Content-Type-Options', 'nosniff');
+		res.setHeader('X-Frame-Options', 'DENY');
+		res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+		res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+		if (env.appMode === 'hosted') {
+			res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+		}
+		next();
+	});
+
 	app.use((req, res, next) => {
 		res.cookie ??= (name, value, options = {}) => {
 			const directives = [`${name}=${encodeURIComponent(value)}`];
@@ -47,9 +61,13 @@ export function createApp() {
 
 	app.use((error, _req, res, _next) => {
 		console.error(error);
-		const status = /Authentication required/.test(error?.message || '') ? 401 : /Invalid|required|already|available|not found|unsupported|failed|Unable|Password|email/i.test(error?.message || '') ? 400 : 500;
+		const status = /Authentication required/.test(error?.message || '')
+			? 401
+			: /Invalid|required|already|available|not found|unsupported|failed|Unable|Password|email/i.test(error?.message || '')
+				? 400
+				: 500;
 		res.status(status).json({
-			error: error.message || 'Internal server error',
+			error: status === 500 ? 'Internal server error' : error.message || 'Request failed',
 		});
 	});
 
