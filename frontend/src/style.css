@@ -3,11 +3,11 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-
 	html,
 	body,
 	#app {
 		min-height: 100vh;
+		overflow-x: clip;
 	}
 
 	body {
@@ -225,6 +225,99 @@
 		display: none !important;
 	}
 
+	/* Keep the main My Drive column shrinkable inside the desktop grid. */
+	body:has(#MyDriveView) .grid.grid-cols-1.gap-3.lg\:grid-cols-\[256px_minmax\(0\,1fr\)\] > *:last-child {
+		min-width: 0;
+	}
+
+	/* The filter/action row is allowed to wrap without widening the page. */
+	body:has(#MyDriveView) #MyDriveView > .mb-3 {
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full {
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 {
+		min-width: 0;
+	}
+
+	body:has(#MyDriveView) #MyDriveView .custom-scrollbar {
+		max-width: 100%;
+	}
+
+	@media (max-width: 767px) {
+		/* Breadcrumbs and headings use the available width on small screens. */
+		body:has(#MyDriveView) #MyDriveView {
+			padding-left: 12px;
+			padding-right: 12px;
+		}
+
+		body:has(#MyDriveView) #MyDriveView nav[aria-label="Breadcrumb"] {
+			max-width: calc(100vw - 28px);
+			font-size: 1.25rem;
+			line-height: 1.75rem;
+		}
+
+		/* Filters wrap first; the secondary search gets its own full-width row. */
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full {
+			gap: 10px;
+		}
+
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 {
+			width: 100%;
+			flex: none;
+			align-items: center;
+		}
+
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > * {
+			max-width: 100%;
+		}
+
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .relative.ml-auto {
+			width: 100%;
+			margin-left: 0;
+		}
+
+		/* Keep the + New action beside the filters when space allows; otherwise
+		   it wraps naturally instead of forcing a horizontal page scroll. */
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > .relative > button,
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > .relative > div > button {
+			max-width: 100%;
+		}
+
+		/* Filter menus stay inside the viewport on narrow phones. */
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute {
+			max-width: calc(100vw - 28px);
+		}
+
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[260px\]"] {
+			min-width: min(260px, calc(100vw - 28px));
+		}
+
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[240px\]"] {
+			min-width: min(240px, calc(100vw - 28px));
+		}
+
+		/* The main file table may scroll internally; it must never expand the page. */
+		body:has(#MyDriveView) #MyDriveView .min-w-\[760px\] {
+			max-width: 100%;
+		}
+
+		/* The mobile navigation is a bounded drawer, not a second page column. */
+		[data-mobile-nav-card] {
+			max-width: calc(100vw - 16px);
+		}
+
+		[data-mobile-nav-card] > div {
+			max-height: calc(100dvh - 72px);
+			padding: 14px;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.truncate-marquee__track {
 			animation: none;
@@ -232,5 +325,3 @@
 		}
 	}
 }
-
-/* deploy marker */
