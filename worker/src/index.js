@@ -10,6 +10,7 @@ import {
   logout,
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
+import { allocationRoutes } from './routes/allocation.js';
 import { filesRoutes } from './routes/files.js';
 import { googleRoutes } from './routes/google.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -116,6 +117,7 @@ app.get('/ws/uploads', async (c) => {
 
 await settingsRoutes(app);
 await accountsRoutes(app);
+await allocationRoutes(app);
 await googleRoutes(app);
 await filesRoutes(app);
 await uploadsRoutes(app);
