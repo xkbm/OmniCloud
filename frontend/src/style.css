@@ -218,28 +218,36 @@
 		padding-right: 0.375rem;
 	}
 
-	/* The existing New menu is shared by DriveShell. On My Drive, visually
-	   relocate that same live control into the main content header. */
-	body:not(:has(#MyDriveView)) div.relative:has(> button.bg-gradient-to-r) {
+	/* Relocate the actual desktop New control into the My Drive header. */
+	aside > div:first-child {
 		display: none !important;
 	}
 
-	body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) {
+	body:has(#MyDriveView) aside > div:first-child {
+		display: block !important;
 		position: fixed !important;
 		top: 78px;
-		left: calc(256px + 24px);
-		z-index: 45;
-		width: 10.5rem !important;
+		right: 128px;
+		z-index: 60;
+		width: max-content !important;
 		margin: 0 !important;
 	}
 
-	body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) > button.bg-gradient-to-r {
+	body:has(#MyDriveView) aside > div:first-child > button {
 		height: 2.75rem;
 		border-radius: 0.875rem;
+		padding-left: 1rem;
+		padding-right: 1.125rem;
+	}
+
+	body:has(#MyDriveView) aside > div:first-child > div {
+		top: calc(100% + 10px);
+		left: auto;
+		right: 0;
 	}
 
 	@media (max-width: 1023px) {
-		body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) {
+		body:not(:has(#MyDriveView)) [data-mobile-nav-card] > div > div.relative.mb-4 {
 			display: none !important;
 		}
 	}
@@ -251,3 +259,5 @@
 		}
 	}
 }
+
+/* deploy marker */
