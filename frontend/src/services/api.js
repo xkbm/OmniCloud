@@ -178,13 +178,16 @@ export const api = {
 		});
 	},
 	async uploadFile(uploadId, file, options = {}) {
-		const formData = new FormData();
-		formData.append('file', file);
+		const headers = {
+			'Content-Type': file.type || 'application/octet-stream',
+			'X-File-Name': encodeURIComponent(file.name || 'upload'),
+		};
 
 		const response = await fetch(`${API_BASE_URL}/uploads/${uploadId}/stream`, {
 			method: 'POST',
 			credentials: 'include',
-			body: formData,
+			headers,
+			body: file,
 			signal: options.signal,
 		});
 
