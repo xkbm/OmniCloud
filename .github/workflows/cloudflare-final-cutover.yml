@@ -83,18 +83,18 @@ jobs:
       - name: Install Wrangler
         run: npm install --no-save wrangler@latest
       - name: Ensure Pages project exists
-        run: npx wrangler pages project create omnicloud --production-branch cloudflare-test || true
+        run: npx wrangler pages project create omnicloud-4u --production-branch cloudflare-test || true
         working-directory: pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy Pages
-        run: npx wrangler pages deploy . --project-name omnicloud
+        run: npx wrangler pages deploy . --project-name omnicloud-4u
         working-directory: pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke test Pages
-        run: curl --fail --silent --show-error --location https://omnicloud.pages.dev/ >/dev/null
+        run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/ >/dev/null
       - name: Smoke test API
-        run: curl --fail --silent --show-error --location https://omnicloud.pages.dev/api/health
+        run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/api/health
