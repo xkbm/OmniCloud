@@ -4,9 +4,9 @@ const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
 
 export class UploadProgress extends DurableObject {
-  constructor(ctx) {
-    super(ctx);
-    this.ctx = ctx;
+  constructor(state, env) {
+    super(state, env);
+    this.ctx = state;
   }
 
   async fetch(request) {
