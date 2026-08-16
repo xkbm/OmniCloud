@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconFolder, IconStar, IconStarFilled, IconEye, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
+import { IconFolder, IconStar, IconStarFilled, IconEye, IconDownload, IconEdit, IconInfoCircle, IconTrash, IconArrowsMove } from '@tabler/icons-vue';
 
 const { t } = useI18n();
 
@@ -15,12 +15,13 @@ const props = defineProps({
 	isPrimaryStarred: { type: Boolean, default: false },
 	canDownload: { type: Boolean, default: false },
 	canRename: { type: Boolean, default: false },
+	canMove: { type: Boolean, default: false },
 	canShowDetails: { type: Boolean, default: true },
 	canOpenFolder: { type: Boolean, default: false },
 	canDelete: { type: Boolean, default: true },
 });
 
-const emit = defineEmits(['open-folder', 'preview', 'toggle-star', 'download', 'rename', 'show-details', 'delete', 'close']);
+const emit = defineEmits(['open-folder', 'preview', 'toggle-star', 'download', 'rename', 'move', 'show-details', 'delete', 'close']);
 
 const showOpen = computed(() => props.canOpenFolder && props.selectedCount === 1 && Boolean(props.primarySelectedFile?.is_folder));
 const showPreview = computed(() => props.selectedCount === 1 && !props.primarySelectedFile?.is_folder);
@@ -40,6 +41,10 @@ function handleDownload() {
 }
 function handleRename() {
 	emit('rename');
+}
+function handleMove() {
+	window.dispatchEvent(new CustomEvent('omnicloud-move-file'));
+	emit('move');
 }
 function handleDetails() {
 	emit('show-details');
@@ -70,6 +75,10 @@ function handleDelete() {
 		<button v-if="canRename" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="!canRename" @click="handleRename">
 			<IconEdit :size="17" :stroke="2" />
 			<span>{{ t('common.rename') }}</span>
+		</button>
+		<button v-if="canMove" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="handleMove">
+			<IconArrowsMove :size="17" :stroke="2" />
+			<span>Mover</span>
 		</button>
 		<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="!canShowDetails" @click="handleDetails">
 			<IconInfoCircle :size="17" :stroke="2" />
