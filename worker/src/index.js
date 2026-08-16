@@ -28,7 +28,7 @@ async function enforceLoginRateLimit(c) {
   if (!c.env.UPLOAD_PROGRESS) return null;
   const ip = c.req.header('CF-Connecting-IP') || 'unknown';
   const stub = c.env.UPLOAD_PROGRESS.get(c.env.UPLOAD_PROGRESS.idFromName(`login-rate:${ip}`));
-  const response = await stub.fetch('https://rate-limit/login', { method: 'POST' });
+  const response = await stub.fetch('https://rate-limit/rate-limit/login', { method: 'POST' });
   if (response.status === 429) {
     const retryAfter = response.headers.get('Retry-After') || '60';
     return c.json({ error: 'Too many login attempts. Please try again later.' }, 429, { 'Retry-After': retryAfter });
@@ -139,7 +139,6 @@ app.get('/ws/uploads', async (c) => {
 
 await settingsRoutes(app);
 await accountsRoutes(app);
-await allocationRoutes(app);
 await googleRoutes(app);
 await filesRoutes(app);
 await uploadsRoutes(app);
