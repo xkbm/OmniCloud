@@ -14,7 +14,7 @@ const { t, locale } = useI18n();
 const features = ['auth.feature1', 'auth.feature2', 'auth.feature3'];
 
 const isDark = ref(document.documentElement.classList.contains('dark'));
-const nextLanguageLabel = computed(() => (locale.value === 'id' ? 'ID' : 'EN'));
+const nextLanguageLabel = computed(() => (locale.value === 'es' ? 'EN' : 'ES'));
 
 function toggleTheme() {
 	const next = isDark.value ? 'light' : 'dark';
@@ -24,7 +24,7 @@ function toggleTheme() {
 }
 
 function toggleLanguage() {
-	setLocale(locale.value === 'id' ? 'en' : 'id');
+	setLocale(locale.value === 'es' ? 'en' : 'es');
 }
 </script>
 
