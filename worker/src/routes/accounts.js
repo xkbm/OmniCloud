@@ -59,10 +59,8 @@ export async function accountsRoutes(app) {
       `;
       if (!account[0]) return c.json({ error: 'Account not found' }, 404);
 
-      await db.transaction(async (tx) => {
-        await tx`DELETE FROM file_metadata WHERE cloud_account_id = ${accountId} AND user_id = ${user.id}`;
-        await tx`DELETE FROM cloud_accounts WHERE id = ${accountId} AND user_id = ${user.id}`;
-      });
+      await db`DELETE FROM file_metadata WHERE cloud_account_id = ${accountId} AND user_id = ${user.id}`;
+      await db`DELETE FROM cloud_accounts WHERE id = ${accountId} AND user_id = ${user.id}`;
       return c.json({ data: { success: true } });
     } catch (error) {
       return c.json({ error: error?.message || 'Request failed' }, error instanceof Response ? error.status : 400);
