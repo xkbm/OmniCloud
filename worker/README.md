@@ -13,7 +13,7 @@ This directory is the Cloudflare replacement for the Render Node/Express API.
 
 ## Current migration stage
 
-The Worker currently exposes `/api/health` and a temporary `/api/auth/me` response. The existing Render backend remains untouched and is still the source of truth while routes are migrated.
+The Worker now contains the migrated authentication, settings, account, Google Drive, file, upload, and progress routes. The Render backend remains untouched while the Cloudflare deployment is validated on `cloudflare-test`.
 
 Do not point production traffic at this Worker yet.
 
@@ -24,7 +24,7 @@ Set these in the Cloudflare dashboard or with Wrangler secrets:
 - `DATABASE_URL`
 - `AUTH_SECRET`
 - `ENCRYPTION_KEY`
-- OAuth client secrets when their routes are migrated
+- OAuth client secrets when their routes are enabled
 
 Public configuration such as `FRONTEND_URL`, `CORS_ORIGIN`, and OAuth client IDs can be Worker variables.
 
@@ -37,4 +37,4 @@ npm install
 npm run dev
 ```
 
-The database schema in `schema.sql` is the destination schema. The existing OmniCloud database is still a SQLite snapshot stored in Neon, so the migration must copy the SQLite rows into these relational tables before the Worker becomes authoritative.
+The database schema in `schema.sql` is the destination schema. The existing OmniCloud database still contains the original SQLite snapshot, so the snapshot must be converted into these relational tables before the Worker becomes authoritative.
