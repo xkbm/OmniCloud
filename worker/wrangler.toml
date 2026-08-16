@@ -1,0 +1,12 @@
+name = "omnicloud-api-test"
+main = "src/index.js"
+compatibility_date = "2026-08-16"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+APP_MODE = "hosted"
+AUTH_COOKIE_NAME = "omnicloud_session"
+AUTH_SESSION_TTL_HOURS = "336"
+
+[observability]
+enabled = true
