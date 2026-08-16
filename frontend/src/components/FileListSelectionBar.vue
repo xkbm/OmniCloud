@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 
-const props = defineProps({
+defineProps({
 	selectedCount: { type: Number, required: true },
 	canPreview: { type: Boolean, default: false },
 	canToggleStar: { type: Boolean, default: false },
@@ -58,7 +58,7 @@ function moveSelectedFiles() {
 			<IconEdit :size="18" :stroke="2" />
 		</button>
 
-		<button v-if="canMove" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" title="Mover" @click.stop="moveSelectedFiles">
+		<button v-if="selectedCount >= 1" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" title="Mover" @click.stop="moveSelectedFiles">
 			<IconArrowsMove :size="18" :stroke="2" />
 		</button>
 
