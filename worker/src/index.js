@@ -9,21 +9,34 @@ import {
   login,
   logout,
 } from './auth.js';
+import { accountsRoutes } from './routes/accounts.js';
+import { settingsRoutes } from './routes/settings.js';
 
 const app = new Hono();
 
 function getAllowedOrigin(env) {
-  return env.CORS_ORIGIN || env.FRONTEND_URL || '*';
+  return env.CORS_ORIGIN || env.FRONTEND_URL || 'http://localhost:5173';
 }
 
 app.use('/api/*', async (c, next) => {
-  const origin = getAllowedOrigin(c.env);
   return cors({
-    origin,
+    origin: getAllowedOrigin(c.env),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
   })(c, next);
+});
+
+app.use('/api/*', async (c, next) => {
+  try {
+    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+    const user = await getUserBySession(c.env, token);
+    c.set('user', user);
+  } catch (error) {
+    console.error('Auth session lookup failed:', error);
+    c.set('user', null);
+  }
+  await next();
 });
 
 app.use('*', async (c, next) => {
@@ -52,15 +65,8 @@ app.get('/api/health', async (c) => {
   }
 });
 
-app.get('/api/auth/me', async (c) => {
-  try {
-    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
-    const user = await getUserBySession(c.env, token);
-    return c.json({ data: authSummary(c.env, user) });
-  } catch (error) {
-    console.error('Auth session lookup failed:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
+app.get('/api/auth/me', (c) => {
+  return c.json({ data: authSummary(c.env, c.get('user')) });
 });
 
 app.post('/api/auth/login', async (c) => {
@@ -98,6 +104,9 @@ app.post('/api/auth/logout', async (c) => {
     return c.json({ error: 'Logout failed' }, 500);
   }
 });
+
+await settingsRoutes(app);
+await accountsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
 
