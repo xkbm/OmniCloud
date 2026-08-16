@@ -117,6 +117,10 @@ app.get('/ws/uploads', async (c) => {
   if (!uploadId) return c.text('uploadId is required', 400);
   if (!c.env.UPLOAD_PROGRESS) return c.text('Upload progress service is not configured', 503);
 
+  const origin = c.req.header('Origin');
+  const allowedOrigin = getAllowedOrigin(c.env);
+  if (origin && origin !== allowedOrigin) return c.text('Origin not allowed', 403);
+
   const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
   const user = await getUserBySession(c.env, token);
   if (!user) return c.text('Authentication required', 401);
