@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { api } from '../services/api';
 import { useContextMenu } from './useContextMenu';
 import { useFileSelection } from './useFileSelection';
@@ -91,6 +91,9 @@ export function useFileActions({
 	const canPreviewSelection = computed(
 		() => selectedCount.value === 1 && canPreview(primarySelectedFile.value),
 	);
+	const canMoveSelection = computed(
+		() => selectedCount.value >= 1 && selectedFiles.value.every((file) => file?.provider === 'google_drive'),
+	);
 
 	function getActionFiles(fallbackFile = contextMenu.value.file) {
 		return selectedFiles.value.length
@@ -167,6 +170,36 @@ export function useFileActions({
 		}
 	}
 
+	async function moveSelectedFile() {
+		const targets = getActionFiles();
+		if (!targets.length || targets.some((file) => file.provider !== 'google_drive')) {
+			errorRef.value = 'Mover archivos actualmente solo está disponible para Google Drive.';
+			closeContextMenu();
+			return;
+		}
+
+		const destination = window.prompt('Ruta de destino (usa / para la raíz):', '/');
+		if (destination === null) return;
+		const virtualPath = destination.trim() || '/';
+		closeContextMenu();
+		errorRef.value = '';
+
+		try {
+			await runWithProgress(
+				'Moviendo',
+				async () => {
+					for (const target of targets) {
+						await api.moveFile(target.id, { virtual_path: virtualPath });
+					}
+				},
+			);
+			clearSelection();
+			await refresh();
+		} catch (error) {
+			errorRef.value = error.message;
+		}
+	}
+
 	async function toggleSelectedFileStar() {
 		const file = resolveFile();
 		if (!file || !file.capabilities?.starred) return;
@@ -199,6 +232,13 @@ export function useFileActions({
 		});
 	}
 
+	function handleMoveEvent() {
+		moveSelectedFile();
+	}
+
+	onMounted(() => window.addEventListener('omnicloud-move-file', handleMoveEvent));
+	onBeforeUnmount(() => window.removeEventListener('omnicloud-move-file', handleMoveEvent));
+
 	return {
 		contextMenu,
 		contextMenuRef,
@@ -230,6 +270,7 @@ export function useFileActions({
 		closeDetails,
 		renameSelectedFile,
 		deleteSelectedFile,
+		moveSelectedFile,
 		downloadSelection,
 		triggerDownload,
 		toggleSelectedFileStar,
@@ -240,5 +281,6 @@ export function useFileActions({
 		isPrimarySelectedStarred,
 		canOpenSelection,
 		canPreviewSelection,
+		canMoveSelection,
 	};
 }
