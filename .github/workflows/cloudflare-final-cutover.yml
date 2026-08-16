@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 22
       - name: Install backend dependencies
-        run: npm ci --prefix backend
+        run: npm install --prefix backend
       - name: Validate Neon secret
         run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
         env:
@@ -34,7 +34,7 @@ jobs:
       - name: Install Worker dependencies
         run: npm install --prefix worker --ignore-scripts
       - name: Install legacy runtime dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts
       - name: Prepare legacy adapters
         run: npm --prefix worker run prepare:legacy
       - name: Validate Worker bundle
