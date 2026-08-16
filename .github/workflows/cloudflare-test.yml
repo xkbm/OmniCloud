@@ -24,7 +24,7 @@ jobs:
           node-version: 24
 
       - name: Install root dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts
 
       - name: Install Worker dependencies
         run: npm install --ignore-scripts
