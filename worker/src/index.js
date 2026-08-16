@@ -1,6 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { neon } from '@neondatabase/serverless';
+import {
+  authCookie,
+  authSummary,
+  extractSessionToken,
+  getUserBySession,
+  login,
+  logout,
+} from './auth.js';
 
 const app = new Hono();
 
@@ -44,15 +52,51 @@ app.get('/api/health', async (c) => {
   }
 });
 
-app.get('/api/auth/me', (c) => {
-  return c.json({
-    data: {
-      mode: c.env.APP_MODE || 'hosted',
-      requiresAuth: true,
-      authenticated: false,
-      user: null,
-    },
-  });
+app.get('/api/auth/me', async (c) => {
+  try {
+    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+    const user = await getUserBySession(c.env, token);
+    return c.json({ data: authSummary(c.env, user) });
+  } catch (error) {
+    console.error('Auth session lookup failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+app.post('/api/auth/login', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const session = await login(c.env, body.email, body.password);
+    const maxAge = Math.max(1, Number(c.env.AUTH_SESSION_TTL_HOURS || 336)) * 60 * 60;
+    return new Response(JSON.stringify({ data: authSummary(c.env, session.user) }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': authCookie(session.token, c.env, maxAge),
+      },
+    });
+  } catch (error) {
+    const message = error?.message || 'Login failed';
+    const status = /Invalid email or password/i.test(message) ? 400 : 500;
+    return c.json({ error: message }, status);
+  }
+});
+
+app.post('/api/auth/logout', async (c) => {
+  try {
+    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+    await logout(c.env, token);
+    return new Response(JSON.stringify({ data: authSummary(c.env, null) }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': authCookie('', c.env, 0),
+      },
+    });
+  } catch (error) {
+    console.error('Logout failed:', error);
+    return c.json({ error: 'Logout failed' }, 500);
+  }
 });
 
 app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
