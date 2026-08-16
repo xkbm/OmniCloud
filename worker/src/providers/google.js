@@ -7,7 +7,8 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 function credentialsSecret(env) {
-  return env.ENCRYPTION_KEY || env.OMNICLOUD_SECRET_HALF || 'omnicloud-dev-secret-half';
+  if (!env.ENCRYPTION_KEY) throw new Error('ENCRYPTION_KEY is not configured');
+  return env.ENCRYPTION_KEY;
 }
 
 function normalizePath(input = '/') {
