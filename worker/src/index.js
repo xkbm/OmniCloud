@@ -13,6 +13,7 @@ import { accountsRoutes } from './routes/accounts.js';
 import { allocationRoutes } from './routes/allocation.js';
 import { filesRoutes } from './routes/files.js';
 import { googleRoutes } from './routes/google.js';
+import { moveRoutes } from './routes/move.js';
 import { settingsRoutes } from './routes/settings.js';
 import { uploadsRoutes } from './routes/uploads.js';
 import { UploadProgress } from './uploadProgress.js';
@@ -142,6 +143,7 @@ await accountsRoutes(app);
 await allocationRoutes(app);
 await googleRoutes(app);
 await filesRoutes(app);
+await moveRoutes(app);
 await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
