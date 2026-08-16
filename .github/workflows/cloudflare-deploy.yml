@@ -19,6 +19,8 @@ jobs:
           node-version: 24
       - name: Install repository dependencies
         run: npm install --ignore-scripts
+      - name: Install Worker dependencies
+        run: npm install --prefix worker --ignore-scripts
       - name: Validate deployment credentials
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
