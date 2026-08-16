@@ -24,6 +24,19 @@ function getAllowedOrigin(env) {
   return env.CORS_ORIGIN || env.FRONTEND_URL || 'http://localhost:5173';
 }
 
+async function enforceLoginRateLimit(c) {
+  if (!c.env.UPLOAD_PROGRESS) return null;
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const stub = c.env.UPLOAD_PROGRESS.get(c.env.UPLOAD_PROGRESS.idFromName(`login-rate:${ip}`));
+  const response = await stub.fetch('https://rate-limit/login', { method: 'POST' });
+  if (response.status === 429) {
+    const retryAfter = response.headers.get('Retry-After') || '60';
+    return c.json({ error: 'Too many login attempts. Please try again later.' }, 429, { 'Retry-After': retryAfter });
+  }
+  if (!response.ok) throw new Error('Login rate limiter unavailable');
+  return null;
+}
+
 app.use('/api/*', async (c, next) => {
   return cors({
     origin: getAllowedOrigin(c.env),
@@ -50,11 +63,14 @@ app.use('*', async (c, next) => {
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  c.header('Cross-Origin-Opener-Policy', 'same-origin');
+  c.header('Cross-Origin-Resource-Policy', 'same-origin');
+  c.header('Cache-Control', c.req.path.startsWith('/api/') ? 'no-store' : 'no-cache');
   if (c.env.APP_MODE === 'hosted') c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 });
 
 app.get('/api/health', async (c) => {
-  if (!c.env.DATABASE_URL) return c.json({ ok: true, service: 'omnicloud-worker', database: 'not-configured' });
+  if (!c.env.DATABASE_URL) return c.json({ ok: false, service: 'omnicloud-worker', database: 'not-configured' }, 503);
   try {
     await neon(c.env.DATABASE_URL)`SELECT 1`;
     return c.json({ ok: true, service: 'omnicloud-worker', database: 'ok' });
@@ -68,12 +84,14 @@ app.get('/api/auth/me', (c) => c.json({ data: authSummary(c.env, c.get('user')) 
 
 app.post('/api/auth/login', async (c) => {
   try {
+    const rateLimitResponse = await enforceLoginRateLimit(c);
+    if (rateLimitResponse) return rateLimitResponse;
     const body = await c.req.json().catch(() => ({}));
     const session = await login(c.env, body.email, body.password);
     const maxAge = Math.max(1, Number(c.env.AUTH_SESSION_TTL_HOURS || 336)) * 60 * 60;
     return new Response(JSON.stringify({ data: authSummary(c.env, session.user) }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Set-Cookie': authCookie(session.token, c.env, maxAge) },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': authCookie(session.token, c.env, maxAge) },
     });
   } catch (error) {
     const message = error?.message || 'Login failed';
@@ -86,7 +104,7 @@ app.post('/api/auth/logout', async (c) => {
     await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session'));
     return new Response(JSON.stringify({ data: authSummary(c.env, null) }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Set-Cookie': authCookie('', c.env, 0) },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': authCookie('', c.env, 0) },
     });
   } catch (error) {
     console.error('Logout failed:', error);
@@ -122,7 +140,7 @@ await googleRoutes(app);
 await filesRoutes(app);
 await uploadsRoutes(app);
 
-app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
+app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 
 export { UploadProgress };
 export default app;
