@@ -2,9 +2,6 @@ name: Cloudflare deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - cloudflare-test
 
 permissions:
   contents: read
