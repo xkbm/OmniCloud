@@ -152,7 +152,7 @@ export function authCookie(token, env, maxAgeSeconds) {
     `${env.AUTH_COOKIE_NAME || 'omnicloud_session'}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax',
+    'SameSite=Strict',
     'Secure',
   ];
   if (typeof maxAgeSeconds === 'number') parts.push(`Max-Age=${maxAgeSeconds}`);
