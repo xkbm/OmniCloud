@@ -30,9 +30,15 @@ export class UploadProgress extends DurableObject {
       await this.ctx.storage.put('login-rate', next);
 
       if (next.count > LOGIN_MAX_ATTEMPTS) {
-        return Response.json({ allowed: false, retryAfter: Math.max(1, Math.ceil((next.resetAt - now) / 1000)) }, { status: 429 });
+        const retryAfter = Math.max(1, Math.ceil((next.resetAt - now) / 1000));
+        return new Response(JSON.stringify({ allowed: false, retryAfter }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryAfter), 'Cache-Control': 'no-store' },
+        });
       }
-      return Response.json({ allowed: true, remaining: Math.max(0, LOGIN_MAX_ATTEMPTS - next.count) });
+      return new Response(JSON.stringify({ allowed: true, remaining: Math.max(0, LOGIN_MAX_ATTEMPTS - next.count) }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket upgrade', { status: 426 });
