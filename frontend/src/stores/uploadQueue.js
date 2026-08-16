@@ -132,17 +132,12 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 					for (const item of batchOperations) {
 						item.abortController?.abort?.();
 						item.socket?.close?.();
-						this.updateUpload(item.id, {
-							status: 'cancelled',
-							error: null,
-						});
+						this.updateUpload(item.id, { status: 'cancelled', error: null });
 					}
 					return;
 				}
 
-				for (const item of batchOperations) {
-					item.socket?.close?.();
-				}
+				for (const item of batchOperations) item.socket?.close?.();
 				this.uploads = this.uploads.filter((item) => item.batchId !== id);
 				return;
 			}
@@ -150,17 +145,11 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 			if (isCancellable(operation)) {
 				operation.abortController?.abort?.();
 				operation.socket?.close?.();
-				this.updateUpload(id, {
-					status: 'cancelled',
-					error: null,
-				});
+				this.updateUpload(id, { status: 'cancelled', error: null });
 				return;
 			}
 
-			if (operation?.socket) {
-				operation.socket.close();
-			}
-
+			operation?.socket?.close?.();
 			this.uploads = this.uploads.filter((item) => item.id !== id);
 		},
 		clearOperations() {
@@ -172,20 +161,13 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 		},
 		async trackServerOperation(metadata, operation) {
 			const queueItem = this.registerOperation({ ...metadata, status: 'processing', progress: 15 });
-
 			try {
 				this.updateUpload(queueItem.id, { progress_percentage: 45 });
 				const result = await operation();
-				this.updateUpload(queueItem.id, {
-					progress_percentage: 100,
-					status: 'completed',
-				});
+				this.updateUpload(queueItem.id, { progress_percentage: 100, status: 'completed' });
 				return result;
 			} catch (error) {
-				this.updateUpload(queueItem.id, {
-					status: 'failed',
-					error: error.message,
-				});
+				this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
 				throw error;
 			}
 		},
@@ -201,7 +183,6 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 
 			for (const file of downloadableFiles) {
 				const abortController = new AbortController();
-
 				const queueItem = this.registerOperation({
 					type: 'download',
 					name: file.display_name || file.file_name,
@@ -247,24 +228,13 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 					link.click();
 					link.remove();
 					URL.revokeObjectURL(url);
-
-					this.updateUpload(queueItem.id, {
-						progress_percentage: 100,
-						status: 'completed',
-					});
+					this.updateUpload(queueItem.id, { progress_percentage: 100, status: 'completed' });
 				} catch (error) {
 					if (isAbortError(error)) {
-						this.updateUpload(queueItem.id, {
-							status: 'cancelled',
-							error: null,
-						});
+						this.updateUpload(queueItem.id, { status: 'cancelled', error: null });
 						return;
 					}
-
-					this.updateUpload(queueItem.id, {
-						status: 'failed',
-						error: error.message,
-					});
+					this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
 					if (batchTotal === 1) throw error;
 				}
 			}
@@ -276,6 +246,8 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 
 			for (const rawEntry of entries) {
 				const { file, relativePath } = normalizeUploadEntry(rawEntry);
+				if (!(file instanceof File)) continue;
+
 				const queueItem = this.registerUpload(file, currentPath, relativePath, { batchId, batchTotal });
 				const targetPath = buildVirtualPath(currentPath, relativePath);
 
@@ -287,63 +259,32 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 						virtual_path: targetPath,
 					}, { signal: queueItem.abortController.signal });
 
-					const socket = api.createUploadSocket(data.upload_id);
+					const uploadId = data?.upload_id || data?.id;
+					if (!uploadId) throw new Error('Upload session was not created');
+
+					// WebSocket progress is optional. Cloudflare Pages may not proxy
+					// upgrade requests on the same route, so never make the upload
+					// depend on it. The actual file transfer is plain HTTP below.
 					this.updateUpload(queueItem.id, {
 						status: 'uploading',
-						socket,
-						remoteUploadId: data.upload_id,
+						remoteUploadId: uploadId,
+						progress_percentage: 1,
 					});
 
-					socket.onmessage = (event) => {
-						if (queueItem.abortController.signal.aborted) return;
+					await api.uploadFile(uploadId, file, { signal: queueItem.abortController.signal });
 
-						const message = JSON.parse(event.data);
-						if (message.type === 'upload:progress') {
-							this.updateUpload(queueItem.id, {
-								progress_percentage: message.percent,
-								status: message.status,
-							});
-						}
-
-						if (message.type === 'upload:complete') {
-							this.updateUpload(queueItem.id, {
-								progress_percentage: 100,
-								status: 'completed',
-							});
-							socket.close();
-							onCompleted?.();
-						}
-
-						if (message.type === 'upload:error') {
-							this.updateUpload(queueItem.id, {
-								status: 'failed',
-								error: message.message,
-							});
-							socket.close();
-						}
-					};
-
-					socket.onerror = () => {
-						this.updateUpload(queueItem.id, {
-							status: 'failed',
-							error: 'WebSocket connection failed',
-						});
-					};
-
-					await api.uploadFile(data.upload_id, file, { signal: queueItem.abortController.signal });
+					this.updateUpload(queueItem.id, {
+						progress_percentage: 100,
+						status: 'completed',
+					});
+					onCompleted?.();
 				} catch (error) {
 					if (isAbortError(error) || queueItem.abortController.signal.aborted) {
-						this.updateUpload(queueItem.id, {
-							status: 'cancelled',
-							error: null,
-						});
+						this.updateUpload(queueItem.id, { status: 'cancelled', error: null });
 						continue;
 					}
 
-					this.updateUpload(queueItem.id, {
-						status: 'failed',
-						error: error.message,
-					});
+					this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
 				}
 			}
 		},
