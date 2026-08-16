@@ -139,6 +139,7 @@ app.get('/ws/uploads', async (c) => {
 
 await settingsRoutes(app);
 await accountsRoutes(app);
+await allocationRoutes(app);
 await googleRoutes(app);
 await filesRoutes(app);
 await uploadsRoutes(app);
