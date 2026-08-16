@@ -9,6 +9,11 @@ function getSql(env) {
   return neon(env.DATABASE_URL);
 }
 
+function getAuthSecret(env) {
+  if (!env.AUTH_SECRET) throw new Error('AUTH_SECRET is not configured');
+  return env.AUTH_SECRET;
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -38,6 +43,10 @@ function sessionExpiry(hours) {
   return expiresAt.toISOString();
 }
 
+function sessionHash(env, token) {
+  return sha256(`omnicloud-session-v1:${getAuthSecret(env)}:${token}`);
+}
+
 export async function getUserByEmail(env, email) {
   const sql = getSql(env);
   const normalizedEmail = normalizeEmail(email);
@@ -54,7 +63,7 @@ export async function getUserBySession(env, token) {
   if (!token) return null;
 
   const sql = getSql(env);
-  const tokenHash = sha256(`${env.AUTH_SECRET || ''}:${token}`);
+  const tokenHash = sessionHash(env, token);
   const result = await sql`
     SELECT u.id, u.email, u.password_hash, u.is_local, u.created_at, u.updated_at,
            s.id AS session_id, s.expires_at
@@ -119,7 +128,7 @@ export async function login(env, email, password) {
 
   const sql = getSql(env);
   const token = randomBytes(SESSION_BYTES).toString('hex');
-  const tokenHash = sha256(`${env.AUTH_SECRET || ''}:${token}`);
+  const tokenHash = sessionHash(env, token);
   const sessionId = randomUUID();
   const expiresAt = sessionExpiry(env.AUTH_SESSION_TTL_HOURS);
 
@@ -134,7 +143,7 @@ export async function login(env, email, password) {
 export async function logout(env, token) {
   if (!token) return;
   const sql = getSql(env);
-  const tokenHash = sha256(`${env.AUTH_SECRET || ''}:${token}`);
+  const tokenHash = sessionHash(env, token);
   await sql`DELETE FROM auth_sessions WHERE token_hash = ${tokenHash}`;
 }
 
