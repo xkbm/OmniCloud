@@ -24,15 +24,25 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
+          test -n "$NEON_DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
+          test -n "$OMNICLOUD_ENCRYPTION_KEY" || (echo "Missing OMNICLOUD_ENCRYPTION_KEY" && exit 1)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
       - name: Deploy Worker
-        run: npx wrangler deploy
+        run: |
+          printf '%s' "$NEON_DATABASE_URL" | npx wrangler secret put DATABASE_URL
+          printf '%s' "$OMNICLOUD_ENCRYPTION_KEY" | npx wrangler secret put ENCRYPTION_KEY
+          printf '%s' "$OMNICLOUD_ENCRYPTION_KEY" | npx wrangler secret put AUTH_SECRET
+          npx wrangler deploy
         working-directory: worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
 
   deploy-pages:
     runs-on: ubuntu-latest
@@ -49,6 +59,11 @@ jobs:
         env:
           VITE_API_BASE_URL: /api
           VITE_WS_BASE_URL: /ws/uploads
+      - name: Prepare Pages bundle
+        run: |
+          rm -rf pages/dist pages/functions
+          cp -R frontend/dist pages/dist
+          cp -R functions pages/functions
       - name: Install Wrangler
         run: npm install --no-save wrangler@latest
       - name: Ensure Pages project exists
@@ -59,7 +74,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy Pages
-        run: npx wrangler pages deploy
+        run: npx wrangler pages deploy . --project-name omnicloud
         working-directory: pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
