@@ -1,5 +1,5 @@
 <script setup>
-import { IconX, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
+import { IconX, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconArrowsMove, IconTrash } from '@tabler/icons-vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -11,6 +11,7 @@ const props = defineProps({
 	isPrimaryStarred: { type: Boolean, default: false },
 	canDownload: { type: Boolean, default: false },
 	canRename: { type: Boolean, default: false },
+	canMove: { type: Boolean, default: false },
 	canShowDetails: { type: Boolean, default: true },
 	canDelete: { type: Boolean, default: true },
 	primaryFile: { type: Object, default: null },
@@ -22,6 +23,7 @@ const emit = defineEmits([
 	'toggle-star',
 	'download',
 	'rename',
+	'move',
 	'show-details',
 	'delete',
 ]);
@@ -50,6 +52,10 @@ const emit = defineEmits([
 
 		<button type="button" class="inline-flex size-9 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-45 enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.rename')" :disabled="!canRename" @click="emit('rename')">
 			<IconEdit :size="18" :stroke="2" />
+		</button>
+
+		<button v-if="canMove" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('drive.move')" @click="emit('move')">
+			<IconArrowsMove :size="18" :stroke="2" />
 		</button>
 
 		<button type="button" class="inline-flex size-9 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-45 enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('drive.details')" :disabled="!canShowDetails || selectedCount !== 1" @click="emit('show-details')">
