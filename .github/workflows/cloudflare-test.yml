@@ -1,0 +1,42 @@
+name: Cloudflare migration test
+
+on:
+  push:
+    branches:
+      - cloudflare-test
+  pull_request:
+    branches:
+      - cloudflare-test
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Worker dependencies
+        run: npm ci --ignore-scripts
+        working-directory: worker
+
+      - name: Check Worker syntax
+        run: |
+          node --check worker/src/index.js
+          node --check worker/src/auth.js
+          node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Validate Wrangler configuration
+        run: npx wrangler deploy --dry-run
+        working-directory: worker
