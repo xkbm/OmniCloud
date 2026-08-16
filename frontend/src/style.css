@@ -20,308 +20,72 @@
 		transition: background-color 180ms ease, color 180ms ease;
 	}
 
-	.dark body {
-		background: #0f172a;
-		color: #e5e7eb;
-	}
-
-	a {
-		color: inherit;
-		text-decoration: none;
-	}
-
-	button {
-		cursor: pointer;
-	}
-
-	* {
-		scrollbar-width: thin;
-		scrollbar-color: #8ab4f8 transparent;
-	}
-
-	*::-webkit-scrollbar {
-		width: 10px;
-		height: 10px;
-	}
-
-	*::-webkit-scrollbar-track {
-		background: transparent;
-	}
-
-	*::-webkit-scrollbar-thumb {
-		min-height: 48px;
-		border: 3px solid transparent;
-		border-radius: 999px;
-		background: linear-gradient(180deg, #8ab4f8, #1a73e8) border-box;
-		box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35);
-	}
-
-	*::-webkit-scrollbar-thumb:hover {
-		background: linear-gradient(180deg, #a7c7ff, #0b57d0) border-box;
-	}
-
-	*::-webkit-scrollbar-corner {
-		background: transparent;
-	}
-
-	.dark * {
-		scrollbar-color: #38bdf8 transparent;
-	}
-
-	.dark *::-webkit-scrollbar-thumb {
-		background: linear-gradient(180deg, #38bdf8, #2563eb) border-box;
-		box-shadow: inset 0 0 0 1px rgb(15 23 42 / 0.35);
-	}
-
-	.dark *::-webkit-scrollbar-thumb:hover {
-		background: linear-gradient(180deg, #7dd3fc, #3b82f6) border-box;
-	}
+	.dark body { background: #0f172a; color: #e5e7eb; }
+	a { color: inherit; text-decoration: none; }
+	button { cursor: pointer; }
+	* { scrollbar-width: thin; scrollbar-color: #8ab4f8 transparent; }
+	*::-webkit-scrollbar { width: 10px; height: 10px; }
+	*::-webkit-scrollbar-track { background: transparent; }
+	*::-webkit-scrollbar-thumb { min-height: 48px; border: 3px solid transparent; border-radius: 999px; background: linear-gradient(180deg, #8ab4f8, #1a73e8) border-box; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35); }
+	*::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #a7c7ff, #0b57d0) border-box; }
+	*::-webkit-scrollbar-corner { background: transparent; }
+	.dark * { scrollbar-color: #38bdf8 transparent; }
+	.dark *::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #38bdf8, #2563eb) border-box; box-shadow: inset 0 0 0 1px rgb(15 23 42 / 0.35); }
+	.dark *::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7dd3fc, #3b82f6) border-box; }
 }
 
 @layer components {
-	.custom-scrollbar {
-		scrollbar-gutter: auto;
-	}
+	.custom-scrollbar { scrollbar-gutter: auto; }
+	.truncate-marquee { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+	.truncate-marquee__track { display: inline-block; max-width: none; will-change: transform; }
+	.truncate-marquee__text { display: inline-block; vertical-align: top; }
 
-	.truncate-marquee {
-		display: block;
-		min-width: 0;
-		max-width: 100%;
-		overflow: hidden;
-		white-space: nowrap;
-	}
+	aside a[href="/quota"] { width: 100%; min-width: 0; overflow: hidden; }
+	aside a[href="/quota"] > div { min-width: 0; }
+	aside a[href="/quota"] > div > div:first-child { min-width: 0; gap: 0.5rem; }
+	aside a[href="/quota"] > div > div:first-child > div:first-child { min-width: 0; flex: 1 1 auto; }
+	aside a[href="/quota"] > div > div:first-child > div:first-child > span:first-child { flex: 0 0 2.25rem; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; min-height: 2.25rem; aspect-ratio: 1 / 1; display: grid; place-items: center; background: transparent !important; }
+	aside a[href="/quota"] > div > div:first-child > div:first-child > span:first-child > svg { width: 20px !important; height: 20px !important; min-width: 20px; min-height: 20px; max-width: 20px; max-height: 20px; flex: 0 0 auto; fill: none !important; stroke: currentColor !important; stroke-width: 2 !important; }
+	aside a[href="/quota"] > div > div:first-child > div:first-child > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	aside a[href="/quota"] > div > div:first-child > span:last-child { flex: 0 0 auto; white-space: nowrap; }
+	aside a[href="/quota"] > p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-	.truncate-marquee__track {
-		display: inline-block;
-		max-width: none;
-		will-change: transform;
-	}
+	.mt-4.rounded-\[24px\] > .mb-3 { min-width: 0; gap: 0.35rem; }
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 { min-width: 0; flex: 1 1 auto; gap: 0.375rem; }
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:first-child { flex: 0 0 2.25rem; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; min-height: 2.25rem; aspect-ratio: 1 / 1; display: grid; place-items: center; background: transparent !important; }
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:first-child > svg { width: 20px !important; height: 20px !important; min-width: 20px; min-height: 20px; max-width: 20px; max-height: 20px; flex: 0 0 auto; fill: none !important; stroke: currentColor !important; stroke-width: 2 !important; }
+	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:last-child { min-width: max-content; overflow: visible; text-overflow: clip; white-space: nowrap; font-size: 0.75rem; line-height: 1.25rem; }
+	.mt-4.rounded-\[24px\] > .mb-3 > span:last-child { flex-shrink: 0; white-space: nowrap; padding-left: 0.375rem; padding-right: 0.375rem; }
 
-	.truncate-marquee__text {
-		display: inline-block;
-		vertical-align: top;
-	}
-
-	aside a[href="/quota"] {
-		width: 100%;
-		min-width: 0;
-		overflow: hidden;
-	}
-
-	aside a[href="/quota"] > div {
-		min-width: 0;
-	}
-
-	aside a[href="/quota"] > div > div:first-child {
-		min-width: 0;
-		gap: 0.5rem;
-	}
-
-	aside a[href="/quota"] > div > div:first-child > div:first-child {
-		min-width: 0;
-		flex: 1 1 auto;
-	}
-
-	aside a[href="/quota"] > div > div:first-child > div:first-child > span:first-child {
-		flex: 0 0 2.25rem;
-		width: 2.25rem;
-		min-width: 2.25rem;
-		height: 2.25rem;
-		min-height: 2.25rem;
-		aspect-ratio: 1 / 1;
-		display: grid;
-		place-items: center;
-		background: transparent !important;
-	}
-
-	aside a[href="/quota"] > div > div:first-child > div:first-child > span:first-child > svg {
-		width: 20px !important;
-		height: 20px !important;
-		min-width: 20px;
-		min-height: 20px;
-		max-width: 20px;
-		max-height: 20px;
-		flex: 0 0 auto;
-		fill: none !important;
-		stroke: currentColor !important;
-		stroke-width: 2 !important;
-	}
-
-	aside a[href="/quota"] > div > div:first-child > div:first-child > span:last-child {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	aside a[href="/quota"] > div > div:first-child > span:last-child {
-		flex: 0 0 auto;
-		white-space: nowrap;
-	}
-
-	aside a[href="/quota"] > p {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 {
-		min-width: 0;
-		gap: 0.35rem;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 {
-		min-width: 0;
-		flex: 1 1 auto;
-		gap: 0.375rem;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:first-child {
-		flex: 0 0 2.25rem;
-		width: 2.25rem;
-		min-width: 2.25rem;
-		height: 2.25rem;
-		min-height: 2.25rem;
-		aspect-ratio: 1 / 1;
-		display: grid;
-		place-items: center;
-		background: transparent !important;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:first-child > svg {
-		width: 20px !important;
-		height: 20px !important;
-		min-width: 20px;
-		min-height: 20px;
-		max-width: 20px;
-		max-height: 20px;
-		flex: 0 0 auto;
-		fill: none !important;
-		stroke: currentColor !important;
-		stroke-width: 2 !important;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 > .flex.items-center.gap-2\.5 > span:last-child {
-		min-width: max-content;
-		overflow: visible;
-		text-overflow: clip;
-		white-space: nowrap;
-		font-size: 0.75rem;
-		line-height: 1.25rem;
-	}
-
-	.mt-4.rounded-\[24px\] > .mb-3 > span:last-child {
-		flex-shrink: 0;
-		white-space: nowrap;
-		padding-left: 0.375rem;
-		padding-right: 0.375rem;
-	}
-
-	/* The old Sidebar/mobile New controls are no longer the active entry point.
-	   My Drive renders the live New menu inside its filter row instead. */
 	aside > div:first-child,
-	[data-mobile-nav-card] > div > div.relative.mb-4 {
-		display: none !important;
-	}
+	[data-mobile-nav-card] > div > div.relative.mb-4 { display: none !important; }
 
-	/* Keep the main My Drive column shrinkable inside the desktop grid. */
-	body:has(#MyDriveView) .grid.grid-cols-1.gap-3.lg\:grid-cols-\[256px_minmax\(0\,1fr\)\] > *:last-child {
-		min-width: 0;
-	}
-
-	/* The filter/action row is allowed to wrap without widening the page. */
-	body:has(#MyDriveView) #MyDriveView > .mb-3 {
-		min-width: 0;
-		max-width: 100%;
-	}
-
-	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full {
-		min-width: 0;
-		max-width: 100%;
-	}
-
-	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 {
-		min-width: 0;
-	}
-
-	body:has(#MyDriveView) #MyDriveView .custom-scrollbar {
-		max-width: 100%;
-	}
+	body:has(#MyDriveView) .grid.grid-cols-1.gap-3.lg\:grid-cols-\[256px_minmax\(0\,1fr\)\] > *:last-child { min-width: 0; }
+	body:has(#MyDriveView) #MyDriveView > .mb-3 { min-width: 0; max-width: 100%; }
+	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full { min-width: 0; max-width: 100%; }
+	body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 { min-width: 0; }
+	body:has(#MyDriveView) #MyDriveView .custom-scrollbar { max-width: 100%; }
 
 	@media (max-width: 767px) {
-		/* Breadcrumbs and headings use the available width on small screens. */
-		body:has(#MyDriveView) #MyDriveView {
-			padding-left: 12px;
-			padding-right: 12px;
-		}
-
-		body:has(#MyDriveView) #MyDriveView nav[aria-label="Breadcrumb"] {
-			max-width: calc(100vw - 28px);
-			font-size: 1.25rem;
-			line-height: 1.75rem;
-		}
-
-		/* Filters wrap first; the secondary search gets its own full-width row. */
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full {
-			gap: 10px;
-		}
-
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 {
-			width: 100%;
-			flex: none;
-			align-items: center;
-		}
-
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > * {
-			max-width: 100%;
-		}
-
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .relative.ml-auto {
-			width: 100%;
-			margin-left: 0;
-		}
-
-		/* Keep the + New action beside the filters when space allows; otherwise
-		   it wraps naturally instead of forcing a horizontal page scroll. */
+		body:has(#MyDriveView) #MyDriveView { padding-left: 12px; padding-right: 12px; }
+		body:has(#MyDriveView) #MyDriveView nav[aria-label="Breadcrumb"] { max-width: calc(100vw - 28px); font-size: 1.25rem; line-height: 1.75rem; }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full { gap: 10px; }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 { width: 100%; flex: none; align-items: center; }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > * { max-width: 100%; }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .relative.ml-auto { width: 100%; margin-left: 0; }
 		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > .relative > button,
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > .relative > div > button {
-			max-width: 100%;
-		}
-
-		/* Filter menus stay inside the viewport on narrow phones. */
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute {
-			max-width: calc(100vw - 28px);
-		}
-
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[260px\]"] {
-			min-width: min(260px, calc(100vw - 28px));
-		}
-
-		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[240px\]"] {
-			min-width: min(240px, calc(100vw - 28px));
-		}
-
-		/* The main file table may scroll internally; it must never expand the page. */
-		body:has(#MyDriveView) #MyDriveView .min-w-\[760px\] {
-			max-width: 100%;
-		}
-
-		/* The mobile navigation is a bounded drawer, not a second page column. */
-		[data-mobile-nav-card] {
-			max-width: calc(100vw - 16px);
-		}
-
-		[data-mobile-nav-card] > div {
-			max-height: calc(100dvh - 72px);
-			padding: 14px;
-		}
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full > .flex.min-w-0 > .relative > div > button { max-width: 100%; }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute { max-width: calc(100vw - 28px); }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[260px\]"] { min-width: min(260px, calc(100vw - 28px)); }
+		body:has(#MyDriveView) #MyDriveView > .mb-3 .flex.w-full .absolute[class*="min-w-\[240px\]"] { min-width: min(240px, calc(100vw - 28px)); }
+		body:has(#MyDriveView) #MyDriveView .min-w-\[760px\] { max-width: 100%; }
+		[data-mobile-nav-card] { max-width: calc(100vw - 16px); }
+		[data-mobile-nav-card] > div { max-height: calc(100dvh - 72px); padding: 14px; }
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.truncate-marquee__track {
-			animation: none;
-			transform: translateX(0) !important;
-		}
+		.truncate-marquee__track { animation: none; transform: translateX(0) !important; }
 	}
 }
+
+/* responsive mobile hardening */
