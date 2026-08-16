@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   deploy-worker:
+    if: github.event_name != 'push' || github.event.head_commit.message != 'RUN_FINAL_CUTOVER'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +71,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-pages:
+    if: github.event_name != 'push' || github.event.head_commit.message != 'RUN_FINAL_CUTOVER'
     runs-on: ubuntu-latest
     needs: deploy-worker
     steps:
