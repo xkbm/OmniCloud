@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 function keyFromSecret(secret) {
-  return createHash('sha256').update(String(secret || 'omnicloud-dev-secret-half'), 'utf8').digest();
+  if (!secret) throw new Error('ENCRYPTION_KEY is not configured');
+  return createHash('sha256').update(String(secret), 'utf8').digest();
 }
 
 export function encryptJson(payload, secret) {
