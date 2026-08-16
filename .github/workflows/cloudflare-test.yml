@@ -8,6 +8,9 @@ on:
     branches:
       - cloudflare-test
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -21,21 +24,26 @@ jobs:
           node-version: 24
 
       - name: Install root dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Install Worker dependencies
         run: npm install --ignore-scripts
         working-directory: worker
 
-      - name: Check Worker syntax
+      - name: Check security-sensitive Worker syntax
         run: |
           node --check worker/src/index.js
           node --check worker/src/auth.js
+          node --check worker/src/crypto.js
+          node --check worker/src/uploadProgress.js
+          node --check worker/src/routes/files.js
+          node --check worker/src/routes/uploads.js
+          node --check worker/src/routes/google.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
       - name: Build frontend
         run: npm run build
 
       - name: Validate Wrangler configuration
-        run: npx wrangler deploy --dry-run
+        run: npx wrangler@4.123.0 deploy --dry-run
         working-directory: worker
