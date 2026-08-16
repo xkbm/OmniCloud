@@ -17,9 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install Worker dependencies
+      - name: Install repository dependencies
         run: npm install --ignore-scripts
-        working-directory: worker
       - name: Validate deployment credentials
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
@@ -31,6 +30,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
+      - name: Prepare legacy adapters
+        run: npm run prepare:legacy
+        working-directory: worker
+      - name: Validate Worker bundle
+        run: npx wrangler deploy --dry-run
+        working-directory: worker
       - name: Provision Worker runtime secrets
         run: |
           printf '%s' "$NEON_DATABASE_URL" | npx wrangler secret put DATABASE_URL
