@@ -16,7 +16,8 @@ const __dirname = path.dirname(__filename);
 const tempPath = path.join(os.tmpdir(), `omnicloud-verify-${randomUUID()}.db`);
 const pool = new Pool({ connectionString: DATABASE_URL, max: 1, ssl: DATABASE_URL.includes('sslmode=') ? undefined : { rejectUnauthorized: false } });
 const client = await pool.connect();
-const tables = ['users', 'auth_sessions', 'cloud_accounts', 'file_metadata', 'user_settings'];
+const exactTables = ['users', 'cloud_accounts', 'file_metadata', 'user_settings'];
+const ephemeralTables = ['auth_sessions'];
 
 function dotenvCheck() {
   if (!process.env.DATABASE_URL) {
@@ -32,7 +33,7 @@ try {
   const sqlite = new Database(tempPath, { readonly: true });
 
   const mismatches = [];
-  for (const table of tables) {
+  for (const table of exactTables) {
     const sqliteTable = sqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table);
     const sourceCount = sqliteTable ? Number(sqlite.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).get().count) : 0;
     const target = await client.query(`SELECT COUNT(*)::bigint AS count FROM public."${table}"`);
@@ -41,9 +42,18 @@ try {
     if (sourceCount !== targetCount) mismatches.push(`${table}: source=${sourceCount} target=${targetCount}`);
   }
 
+  for (const table of ephemeralTables) {
+    const sqliteTable = sqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table);
+    const sourceCount = sqliteTable ? Number(sqlite.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).get().count) : 0;
+    const target = await client.query(`SELECT COUNT(*)::bigint AS count FROM public."${table}"`);
+    const targetCount = Number(target.rows[0].count);
+    console.log(`${table}: source=${sourceCount} target=${targetCount} (ephemeral; extra sessions are allowed)`);
+    if (targetCount < sourceCount) mismatches.push(`${table}: target=${targetCount} is below snapshot source=${sourceCount}`);
+  }
+
   sqlite.close();
   if (mismatches.length) throw new Error(`Migration parity check failed: ${mismatches.join('; ')}`);
-  console.log('Migration parity verified successfully.');
+  console.log('Migration data parity verified successfully.');
 } finally {
   client.release();
   await pool.end();
