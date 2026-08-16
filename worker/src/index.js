@@ -10,6 +10,8 @@ import {
   logout,
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
+import { filesRoutes } from './routes/files.js';
+import { googleRoutes } from './routes/google.js';
 import { settingsRoutes } from './routes/settings.js';
 import { UploadProgress } from './uploadProgress.js';
 
@@ -117,6 +119,8 @@ app.get('/ws/uploads', async (c) => {
 
 await settingsRoutes(app);
 await accountsRoutes(app);
+await googleRoutes(app);
+await filesRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
 
