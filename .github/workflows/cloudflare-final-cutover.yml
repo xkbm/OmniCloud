@@ -1,0 +1,92 @@
+name: Cloudflare final cutover
+
+on:
+  push:
+    branches:
+      - cloudflare-test
+
+permissions:
+  contents: read
+
+jobs:
+  cutover:
+    if: github.event.head_commit.message == 'RUN_FINAL_CUTOVER'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm install --prefix backend
+      - name: Validate Neon secret
+        run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Migrate SQLite snapshot to PostgreSQL
+        run: npm --prefix backend run migrate:cloudflare
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Verify migration parity
+        run: node backend/scripts/verify-cloudflare-migration.js
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Install Worker dependencies
+        run: npm install --prefix worker --ignore-scripts
+      - name: Prepare legacy adapters
+        run: npm --prefix worker run prepare:legacy
+      - name: Validate Worker bundle
+        run: npm --prefix worker exec wrangler deploy --dry-run
+      - name: Provision Worker runtime secrets
+        shell: bash
+        run: |
+          put_secret() {
+            local name="$1" value="$2"
+            if [ -n "$value" ]; then printf '%s' "$value" | npm --prefix worker exec wrangler secret put "$name"; fi
+          }
+          put_secret DATABASE_URL "$NEON_DATABASE_URL"
+          put_secret ENCRYPTION_KEY "$OMNICLOUD_ENCRYPTION_KEY"
+          put_secret AUTH_SECRET "$OMNICLOUD_ENCRYPTION_KEY"
+          put_secret GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
+          put_secret ONEDRIVE_CLIENT_SECRET "$ONEDRIVE_CLIENT_SECRET"
+          put_secret DROPBOX_CLIENT_SECRET "$DROPBOX_CLIENT_SECRET"
+          put_secret YANDEX_CLIENT_SECRET "$YANDEX_CLIENT_SECRET"
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          ONEDRIVE_CLIENT_SECRET: ${{ secrets.ONEDRIVE_CLIENT_SECRET }}
+          DROPBOX_CLIENT_SECRET: ${{ secrets.DROPBOX_CLIENT_SECRET }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
+      - name: Deploy Worker
+        run: npm --prefix worker exec wrangler deploy
+      - name: Install root dependencies
+        run: npm install --ignore-scripts
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: /api
+          VITE_WS_BASE_URL: /ws/uploads
+      - name: Prepare Pages bundle
+        run: |
+          rm -rf pages/dist pages/functions
+          cp -R frontend/dist pages/dist
+          cp -R functions pages/functions
+      - name: Install Wrangler
+        run: npm install --no-save wrangler@latest
+      - name: Ensure Pages project exists
+        run: npx wrangler pages project create omnicloud --production-branch cloudflare-test || true
+        working-directory: pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy Pages
+        run: npx wrangler pages deploy . --project-name omnicloud
+        working-directory: pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Smoke test Pages
+        run: curl --fail --silent --show-error --location https://omnicloud.pages.dev/ >/dev/null
+      - name: Smoke test API
+        run: curl --fail --silent --show-error --location https://omnicloud.pages.dev/api/health
