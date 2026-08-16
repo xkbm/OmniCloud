@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "prepare:legacy": "node scripts/prepare-legacy.mjs",
+    "dev": "npm run prepare:legacy && wrangler dev",
+    "deploy": "npm run prepare:legacy && wrangler deploy",
     "types": "wrangler types"
   },
   "dependencies": {
