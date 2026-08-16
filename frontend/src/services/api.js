@@ -95,6 +95,12 @@ export const api = {
 			body: JSON.stringify(payload),
 		});
 	},
+	moveFile(fileId, payload) {
+		return request(`/files/${fileId}/move`, {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		});
+	},
 	toggleStar(fileId, isStarred = true) {
 		return request(`/files/${fileId}/star`, {
 			method: 'PATCH',
