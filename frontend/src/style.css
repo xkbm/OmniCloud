@@ -218,38 +218,11 @@
 		padding-right: 0.375rem;
 	}
 
-	/* Relocate the actual desktop New control into the My Drive header. */
-	aside > div:first-child {
+	/* The old Sidebar/mobile New controls are no longer the active entry point.
+	   My Drive renders the live New menu inside its filter row instead. */
+	aside > div:first-child,
+	[data-mobile-nav-card] > div > div.relative.mb-4 {
 		display: none !important;
-	}
-
-	body:has(#MyDriveView) aside > div:first-child {
-		display: block !important;
-		position: fixed !important;
-		top: 78px;
-		right: 128px;
-		z-index: 60;
-		width: max-content !important;
-		margin: 0 !important;
-	}
-
-	body:has(#MyDriveView) aside > div:first-child > button {
-		height: 2.75rem;
-		border-radius: 0.875rem;
-		padding-left: 1rem;
-		padding-right: 1.125rem;
-	}
-
-	body:has(#MyDriveView) aside > div:first-child > div {
-		top: calc(100% + 10px);
-		left: auto;
-		right: 0;
-	}
-
-	@media (max-width: 1023px) {
-		body:not(:has(#MyDriveView)) [data-mobile-nav-card] > div > div.relative.mb-4 {
-			display: none !important;
-		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -259,5 +232,3 @@
 		}
 	}
 }
-
-/* deploy marker 2 */
