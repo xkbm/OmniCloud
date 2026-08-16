@@ -13,6 +13,7 @@ import { accountsRoutes } from './routes/accounts.js';
 import { filesRoutes } from './routes/files.js';
 import { googleRoutes } from './routes/google.js';
 import { settingsRoutes } from './routes/settings.js';
+import { uploadsRoutes } from './routes/uploads.js';
 import { UploadProgress } from './uploadProgress.js';
 
 const app = new Hono();
@@ -26,15 +27,14 @@ app.use('/api/*', async (c, next) => {
     origin: getAllowedOrigin(c.env),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type'],
+    allowHeaders: ['Content-Type', 'X-File-Name'],
   })(c, next);
 });
 
 app.use('/api/*', async (c, next) => {
   try {
     const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
-    const user = await getUserBySession(c.env, token);
-    c.set('user', user);
+    c.set('user', await getUserBySession(c.env, token));
   } catch (error) {
     console.error('Auth session lookup failed:', error);
     c.set('user', null);
@@ -48,19 +48,13 @@ app.use('*', async (c, next) => {
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  if (c.env.APP_MODE === 'hosted') {
-    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
+  if (c.env.APP_MODE === 'hosted') c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 });
 
 app.get('/api/health', async (c) => {
-  if (!c.env.DATABASE_URL) {
-    return c.json({ ok: true, service: 'omnicloud-worker', database: 'not-configured' });
-  }
-
+  if (!c.env.DATABASE_URL) return c.json({ ok: true, service: 'omnicloud-worker', database: 'not-configured' });
   try {
-    const sql = neon(c.env.DATABASE_URL);
-    await sql`SELECT 1`;
+    await neon(c.env.DATABASE_URL)`SELECT 1`;
     return c.json({ ok: true, service: 'omnicloud-worker', database: 'ok' });
   } catch (error) {
     console.error('Worker database health check failed:', error);
@@ -68,9 +62,7 @@ app.get('/api/health', async (c) => {
   }
 });
 
-app.get('/api/auth/me', (c) => {
-  return c.json({ data: authSummary(c.env, c.get('user')) });
-});
+app.get('/api/auth/me', (c) => c.json({ data: authSummary(c.env, c.get('user')) }));
 
 app.post('/api/auth/login', async (c) => {
   try {
@@ -79,28 +71,20 @@ app.post('/api/auth/login', async (c) => {
     const maxAge = Math.max(1, Number(c.env.AUTH_SESSION_TTL_HOURS || 336)) * 60 * 60;
     return new Response(JSON.stringify({ data: authSummary(c.env, session.user) }), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': authCookie(session.token, c.env, maxAge),
-      },
+      headers: { 'Content-Type': 'application/json', 'Set-Cookie': authCookie(session.token, c.env, maxAge) },
     });
   } catch (error) {
     const message = error?.message || 'Login failed';
-    const status = /Invalid email or password/i.test(message) ? 400 : 500;
-    return c.json({ error: message }, status);
+    return c.json({ error: message }, /Invalid email or password/i.test(message) ? 400 : 500);
   }
 });
 
 app.post('/api/auth/logout', async (c) => {
   try {
-    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
-    await logout(c.env, token);
+    await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session'));
     return new Response(JSON.stringify({ data: authSummary(c.env, null) }), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': authCookie('', c.env, 0),
-      },
+      headers: { 'Content-Type': 'application/json', 'Set-Cookie': authCookie('', c.env, 0) },
     });
   } catch (error) {
     console.error('Logout failed:', error);
@@ -112,15 +96,14 @@ app.get('/ws/uploads', async (c) => {
   const uploadId = c.req.query('uploadId');
   if (!uploadId) return c.text('uploadId is required', 400);
   if (!c.env.UPLOAD_PROGRESS) return c.text('Upload progress service is not configured', 503);
-
-  const id = c.env.UPLOAD_PROGRESS.idFromName(uploadId);
-  return c.env.UPLOAD_PROGRESS.get(id).fetch(c.req.raw);
+  return c.env.UPLOAD_PROGRESS.get(c.env.UPLOAD_PROGRESS.idFromName(uploadId)).fetch(c.req.raw);
 });
 
 await settingsRoutes(app);
 await accountsRoutes(app);
 await googleRoutes(app);
 await filesRoutes(app);
+await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
 
