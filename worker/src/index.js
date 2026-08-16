@@ -15,6 +15,7 @@ import { googleRoutes } from './routes/google.js';
 import { settingsRoutes } from './routes/settings.js';
 import { uploadsRoutes } from './routes/uploads.js';
 import { UploadProgress } from './uploadProgress.js';
+import { sql } from './db.js';
 
 const app = new Hono();
 
@@ -96,6 +97,20 @@ app.get('/ws/uploads', async (c) => {
   const uploadId = c.req.query('uploadId');
   if (!uploadId) return c.text('uploadId is required', 400);
   if (!c.env.UPLOAD_PROGRESS) return c.text('Upload progress service is not configured', 503);
+
+  const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+  const user = await getUserBySession(c.env, token);
+  if (!user) return c.text('Authentication required', 401);
+
+  const db = sql(c.env);
+  const sessions = await db`
+    SELECT id
+    FROM upload_sessions
+    WHERE id = ${uploadId} AND user_id = ${user.id}
+    LIMIT 1
+  `;
+  if (!sessions[0]) return c.text('Upload session not found', 404);
+
   return c.env.UPLOAD_PROGRESS.get(c.env.UPLOAD_PROGRESS.idFromName(uploadId)).fetch(c.req.raw);
 });
 
