@@ -15,7 +15,7 @@ const props = defineProps({
 	isPrimaryStarred: { type: Boolean, default: false },
 	canDownload: { type: Boolean, default: false },
 	canRename: { type: Boolean, default: false },
-	canMove: { type: Boolean, default: false },
+	canMove: { type: Boolean, default: true },
 	canShowDetails: { type: Boolean, default: true },
 	canOpenFolder: { type: Boolean, default: false },
 	canDelete: { type: Boolean, default: true },
