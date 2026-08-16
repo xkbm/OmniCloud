@@ -1,6 +1,5 @@
 -- Cloudflare Worker persistence schema.
--- This replaces the SQLite snapshot architecture used by the Render backend.
--- Run this only against the migration/test database after backing it up.
+-- Run against the migration/test database before switching traffic.
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -18,6 +17,14 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS cloud_accounts (
@@ -66,6 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id
   ON cloud_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
   ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at
+  ON oauth_states(expires_at);
 CREATE INDEX IF NOT EXISTS idx_file_virtual_path
   ON file_metadata(user_id, virtual_path);
 CREATE INDEX IF NOT EXISTS idx_file_remote_id
