@@ -2,6 +2,7 @@ import { decryptJson, encryptJson } from '../crypto.js';
 import { sql } from '../db.js';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
+const FILES_API = `${DRIVE_API}/files`;
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -74,6 +75,21 @@ export async function googleRequest(env, account, path, init = {}, retry = true)
     return jsonResponse(await fetch(`${DRIVE_API}${path}`, { ...init, headers }));
   }
   return jsonResponse(response);
+}
+
+async function googleFileRequest(env, account, fileId, init = {}, retry = true) {
+  const credentials = await getGoogleCredentials(env, account);
+  const headers = new Headers(init.headers || {});
+  headers.set('Authorization', `Bearer ${credentials.accessToken}`);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const url = `${FILES_API}/${encodeURIComponent(fileId)}`;
+  let response = await fetch(url, { ...init, headers });
+  if (response.status === 401 && retry && credentials.refreshToken) {
+    const refreshed = await refreshAccessToken(env, account, credentials);
+    headers.set('Authorization', `Bearer ${refreshed.accessToken}`);
+    response = await fetch(url, { ...init, headers });
+  }
+  return response;
 }
 
 export function googleAuthorizationUrl(env, state) {
@@ -164,23 +180,28 @@ export async function syncGoogleAccount(env, userId, account) {
 }
 
 export async function googleSetStar(env, account, fileId, starred) {
-  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ starred: Boolean(starred) }) });
+  return jsonResponse(await googleFileRequest(env, account, fileId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ starred: Boolean(starred) }) }));
 }
+
 export async function googleRename(env, account, fileId, name) {
-  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  return jsonResponse(await googleFileRequest(env, account, fileId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }));
 }
+
 export async function googleDelete(env, account, fileId) {
-  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+  return jsonResponse(await googleFileRequest(env, account, fileId, { method: 'DELETE' }));
 }
+
 export async function googleCreateFolder(env, account, name, parentId = 'root') {
   return googleRequest(env, account, '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }) });
 }
+
 export async function googleDownload(env, account, fileId) {
   const credentials = await getGoogleCredentials(env, account);
-  let response = await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+  const url = `${FILES_API}/${encodeURIComponent(fileId)}?alt=media`;
+  let response = await fetch(url, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
   if (response.status === 401 && credentials.refreshToken) {
     const refreshed = await refreshAccessToken(env, account, credentials);
-    response = await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${refreshed.accessToken}` } });
+    response = await fetch(url, { headers: { Authorization: `Bearer ${refreshed.accessToken}` } });
   }
   if (!response.ok) throw new Error(`Google download failed (${response.status})`);
   return response;
