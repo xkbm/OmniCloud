@@ -11,6 +11,7 @@ import {
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
 import { settingsRoutes } from './routes/settings.js';
+import { UploadProgress } from './uploadProgress.js';
 
 const app = new Hono();
 
@@ -105,9 +106,19 @@ app.post('/api/auth/logout', async (c) => {
   }
 });
 
+app.get('/ws/uploads', async (c) => {
+  const uploadId = c.req.query('uploadId');
+  if (!uploadId) return c.text('uploadId is required', 400);
+  if (!c.env.UPLOAD_PROGRESS) return c.text('Upload progress service is not configured', 503);
+
+  const id = c.env.UPLOAD_PROGRESS.idFromName(uploadId);
+  return c.env.UPLOAD_PROGRESS.get(id).fetch(c.req.raw);
+});
+
 await settingsRoutes(app);
 await accountsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Cloudflare API route not migrated yet' }, 501));
 
+export { UploadProgress };
 export default app;
