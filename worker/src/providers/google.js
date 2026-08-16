@@ -199,8 +199,8 @@ export async function googleFindParent(env, account, virtualPath) {
   return parentId;
 }
 
-export async function googleUpload(env, account, { body, fileName, mimeType, virtualPath, parentId, size }) {
-  const resolvedParent = parentId || await googleFindParent(env, account, virtualPath) || 'root';
+export async function googleUpload(env, account, { body, fileName, mimeType, virtualPath, parentId, remoteParentId, size, onProgress }) {
+  const resolvedParent = remoteParentId || parentId || await googleFindParent(env, account, virtualPath) || 'root';
   const credentials = await getGoogleCredentials(env, account);
   const start = await fetch(`${UPLOAD_API}?uploadType=resumable`, {
     method: 'POST',
@@ -230,9 +230,12 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
     });
     if (!retryStart.ok) throw new Error(`Google upload session retry failed (${retryStart.status})`);
     const retryUrl = retryStart.headers.get('Location');
+    if (!retryUrl) throw new Error('Google did not return a retry upload URL');
     response = await fetch(retryUrl, { method: 'PUT', headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) }, body });
   }
-  return jsonResponse(response);
+  const result = await jsonResponse(response);
+  onProgress?.(size || Number(result.size || 0));
+  return result;
 }
 
 export { FOLDER_MIME };
