@@ -1,10 +1,21 @@
 <script setup>
-import { IconChevronDown, IconCloud, IconCloudFilled, IconCheck, IconSearch, IconX } from '@tabler/icons-vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { IconChevronDown, IconChevronRight, IconCloud, IconCloudFilled, IconCheck, IconPlus, IconSearch, IconX } from '@tabler/icons-vue';
 import { useI18n } from 'vue-i18n';
 import { getTypeFilterIcon } from '../composables/useFileType.js';
 import { providerIcon, providerLabel } from '../composables/useFormatFile.js';
+import { useFileTreeStore } from '../stores/fileTree';
+import { useUploadQueueStore } from '../stores/uploadQueue';
+import { api } from '../services/api';
 
 const { t } = useI18n();
+const fileTreeStore = useFileTreeStore();
+const uploadQueueStore = useUploadQueueStore();
+
+const fileInputRef = ref(null);
+const folderInputRef = ref(null);
+const newMenuRef = ref(null);
+const isNewMenuOpen = ref(false);
 
 const props = defineProps({
 	typeOptions: { type: Array, required: true },
@@ -43,10 +54,82 @@ function isFilterActive(type) {
 	if (type === 'updated') return props.selectedUpdatedFilter !== 'all';
 	return false;
 }
+
+function closeNewMenu() {
+	isNewMenuOpen.value = false;
+}
+
+function toggleNewMenu() {
+	isNewMenuOpen.value = !isNewMenuOpen.value;
+}
+
+function resetInput(inputRef) {
+	if (inputRef.value) inputRef.value.value = '';
+}
+
+async function refreshCurrentFolder() {
+	await fileTreeStore.loadFiles(fileTreeStore.currentPath);
+}
+
+async function handleUploads(entries) {
+	if (!entries.length) return;
+	closeNewMenu();
+	try {
+		await uploadQueueStore.uploadFiles(entries, fileTreeStore.currentPath, refreshCurrentFolder);
+		await refreshCurrentFolder();
+	} catch {
+	}
+}
+
+function openFilePicker() {
+	resetInput(fileInputRef);
+	fileInputRef.value?.click();
+}
+
+function openFolderPicker() {
+	resetInput(folderInputRef);
+	folderInputRef.value?.click();
+}
+
+async function onFileInputChange(event) {
+	await handleUploads(Array.from(event.target.files || []));
+}
+
+async function onFolderInputChange(event) {
+	const entries = Array.from(event.target.files || []).map((file) => ({
+		file,
+		relativePath: file.webkitRelativePath || file.name,
+	}));
+	await handleUploads(entries);
+}
+
+async function createNewFolder() {
+	closeNewMenu();
+	const folderName = window.prompt(t('drive.newFolderName'));
+	if (!folderName?.trim()) return;
+	try {
+		await uploadQueueStore.trackServerOperation(
+			{ type: 'create-folder', name: folderName.trim(), targetKind: 'folder' },
+			() => api.createFolder({ name: folderName.trim(), virtual_path: fileTreeStore.currentPath }),
+		);
+		await refreshCurrentFolder();
+	} catch {
+	}
+}
+
+function handleDocumentClick(event) {
+	if (!newMenuRef.value?.contains(event.target)) closeNewMenu();
+}
+
+onMounted(() => document.addEventListener('click', handleDocumentClick));
+onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick));
 </script>
 
 <template>
 	<div class="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+		<input ref="fileInputRef" class="hidden" type="file" multiple @change="onFileInputChange" />
+		<input ref="folderInputRef" class="hidden" type="file" multiple webkitdirectory directory @change="onFolderInputChange" />
+
 		<div class="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
 			<div class="relative">
 				<button type="button" class="inline-flex items-center gap-2 rounded-2xl border border-[#e0e3e7] bg-[#f8fafd] px-3.5 py-2.5 text-sm font-medium text-[#3c4043] transition hover:border-[#c7d2e0] hover:bg-white dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800" @click.stop="emit('toggle-filter-menu', 'type')">
@@ -106,6 +189,27 @@ function isFilterActive(type) {
 					<button v-for="option in updatedOptions" :key="option.value" type="button" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="emit('apply-filter', 'updated', option.value)">
 						<span>{{ option.label }}</span>
 						<IconCheck v-if="selectedUpdatedFilter === option.value" :size="16" :stroke="2" class="text-[#1a73e8] dark:text-sky-300" />
+					</button>
+				</div>
+			</div>
+
+			<div ref="newMenuRef" class="relative shrink-0">
+				<button type="button" class="inline-flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#1a73e8] to-[#4f8ff7] px-4 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(26,115,232,0.2)] transition hover:from-[#155fc4] hover:to-[#3f7fe0]" @click.stop="toggleNewMenu">
+					<IconPlus :size="18" :stroke="2" />
+					<span>{{ t('common.new') }}</span>
+				</button>
+				<div v-if="isNewMenuOpen" class="absolute left-0 top-[calc(100%+10px)] z-40 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_12px_36px_rgba(15,23,42,0.45)]">
+					<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="createNewFolder">
+						<span>{{ t('sidebar.newFolder') }}</span>
+						<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+					</button>
+					<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="openFilePicker">
+						<span>{{ t('sidebar.uploadFile') }}</span>
+						<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+					</button>
+					<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="openFolderPicker">
+						<span>{{ t('sidebar.uploadFolder') }}</span>
+						<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 					</button>
 				</div>
 			</div>
