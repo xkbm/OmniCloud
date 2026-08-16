@@ -1,5 +1,6 @@
 name = "omnicloud"
 compatibility_date = "2026-08-16"
+pages_build_output_dir = "../frontend/dist"
 
 [[services]]
 binding = "OMNICLOUD_API"
