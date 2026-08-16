@@ -5,9 +5,8 @@ export async function onRequest(context) {
   }
 
   const path = Array.isArray(params.path) ? params.path.join('/') : '';
-  const url = new URL(request.url);
-  const target = new URL(`/api/${path}`, url.origin);
-  target.search = url.search;
+  const target = new URL(request.url);
+  target.pathname = `/api/${path}`;
 
   const forwarded = new Request(target, request);
   return env.OMNICLOUD_API.fetch(forwarded);
