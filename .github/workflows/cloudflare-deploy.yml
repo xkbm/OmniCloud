@@ -10,8 +10,27 @@ permissions:
   contents: read
 
 jobs:
+  migrate-neon-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install backend dependencies
+        run: npm install --prefix backend --ignore-scripts
+      - name: Validate Neon migration secret
+        run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Migrate SQLite snapshot to PostgreSQL test branch
+        run: npm --prefix backend run migrate:cloudflare
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
   deploy-worker:
     runs-on: ubuntu-latest
+    needs: migrate-neon-test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +39,7 @@ jobs:
       - name: Install Worker dependencies
         run: npm install --ignore-scripts
         working-directory: worker
-      - name: Validate Cloudflare credentials
+      - name: Validate deployment credentials
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
@@ -31,7 +50,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
-      - name: Deploy Worker
+      - name: Deploy Worker and provision runtime secrets
         run: |
           printf '%s' "$NEON_DATABASE_URL" | npx wrangler secret put DATABASE_URL
           printf '%s' "$OMNICLOUD_ENCRYPTION_KEY" | npx wrangler secret put ENCRYPTION_KEY
