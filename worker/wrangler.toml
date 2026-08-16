@@ -8,5 +8,13 @@ APP_MODE = "hosted"
 AUTH_COOKIE_NAME = "omnicloud_session"
 AUTH_SESSION_TTL_HOURS = "336"
 
+[[durable_objects.bindings]]
+name = "UPLOAD_PROGRESS"
+class_name = "UploadProgress"
+
+[exports.UploadProgress]
+type = "durable-object"
+storage = "sqlite"
+
 [observability]
 enabled = true
