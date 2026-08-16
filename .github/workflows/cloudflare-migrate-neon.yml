@@ -1,0 +1,26 @@
+name: Cloudflare Neon migration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-neon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm install --prefix backend
+      - name: Validate Neon migration secret
+        run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Migrate SQLite snapshot to PostgreSQL
+        run: npm --prefix backend run migrate:cloudflare
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
