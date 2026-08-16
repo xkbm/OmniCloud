@@ -1,5 +1,4 @@
 -- Cloudflare Worker persistence schema.
--- Run against the migration/test database before switching traffic.
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -67,6 +66,21 @@ CREATE TABLE IF NOT EXISTS user_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS upload_sessions (
+  id TEXT PRIMARY KEY,
+  token TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cloud_account_id TEXT NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT,
+  size BIGINT NOT NULL DEFAULT 0,
+  virtual_path TEXT NOT NULL DEFAULT '/',
+  remote_parent_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_accounts_user_provider_email
   ON cloud_accounts(user_id, provider, email);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id
@@ -85,3 +99,5 @@ CREATE INDEX IF NOT EXISTS idx_file_user_account_id
   ON file_metadata(user_id, cloud_account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_user_key
   ON user_settings(user_id, key);
+CREATE INDEX IF NOT EXISTS idx_upload_sessions_user_id
+  ON upload_sessions(user_id, status);
