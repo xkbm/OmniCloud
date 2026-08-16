@@ -218,6 +218,32 @@
 		padding-right: 0.375rem;
 	}
 
+	/* The existing New menu is shared by DriveShell. On My Drive, visually
+	   relocate that same live control into the main content header. */
+	body:not(:has(#MyDriveView)) div.relative:has(> button.bg-gradient-to-r) {
+		display: none !important;
+	}
+
+	body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) {
+		position: fixed !important;
+		top: 78px;
+		left: calc(256px + 24px);
+		z-index: 45;
+		width: 10.5rem !important;
+		margin: 0 !important;
+	}
+
+	body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) > button.bg-gradient-to-r {
+		height: 2.75rem;
+		border-radius: 0.875rem;
+	}
+
+	@media (max-width: 1023px) {
+		body:has(#MyDriveView) div.relative:has(> button.bg-gradient-to-r) {
+			display: none !important;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.truncate-marquee__track {
 			animation: none;
