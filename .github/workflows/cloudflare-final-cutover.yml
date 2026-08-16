@@ -77,8 +77,9 @@ jobs:
           VITE_WS_BASE_URL: /ws/uploads
       - name: Prepare Pages bundle
         run: |
-          rm -rf pages/dist pages/functions
-          cp -R frontend/dist pages/dist
+          find pages -maxdepth 1 -type f ! -name 'wrangler.toml' -delete
+          rm -rf pages/assets pages/dist pages/functions
+          cp -R frontend/dist/. pages/
           cp -R functions pages/functions
       - name: Install Wrangler
         run: npm install --no-save wrangler@latest
