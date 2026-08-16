@@ -1,0 +1,6 @@
+name = "omnicloud"
+compatibility_date = "2026-08-16"
+
+[[services]]
+binding = "OMNICLOUD_API"
+service = "omnicloud-api-test"
