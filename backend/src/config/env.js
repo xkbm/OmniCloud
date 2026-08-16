@@ -3,18 +3,28 @@ import crypto from 'crypto';
 
 dotenv.config();
 
+const appMode = process.env.APP_MODE === 'hosted' ? 'hosted' : 'local';
 const configuredEncryptionSecret = process.env.ENCRYPTION_KEY || process.env.OMNICLOUD_SECRET_HALF;
-const encryptionSecret = configuredEncryptionSecret || 'omnicloud-dev-secret-half';
+const configuredAuthSecret = process.env.AUTH_SECRET || process.env.OMNICLOUD_SECRET_HALF;
+
+if (appMode === 'hosted' && !configuredEncryptionSecret) {
+	throw new Error('ENCRYPTION_KEY is required in hosted mode');
+}
+if (appMode === 'hosted' && !configuredAuthSecret) {
+	throw new Error('AUTH_SECRET is required in hosted mode');
+}
+
+const encryptionSecret = configuredEncryptionSecret || 'local-development-only';
 const encryptionKey = crypto.createHash('sha256').update(encryptionSecret, 'utf8').digest();
 
 export const env = {
 	port: Number(process.env.PORT || 8787),
-	appMode: process.env.APP_MODE === 'hosted' ? 'hosted' : 'local',
+	appMode,
 	corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
 	syncIntervalMinutes: Number(process.env.SYNC_INTERVAL_MINUTES || 5),
 	authCookieName: process.env.AUTH_COOKIE_NAME || 'omnicloud_session',
 	authSessionTtlHours: Number(process.env.AUTH_SESSION_TTL_HOURS || 24 * 14),
-	authSecret: process.env.AUTH_SECRET || process.env.OMNICLOUD_SECRET_HALF || 'omnicloud-dev-auth-secret',
+	authSecret: configuredAuthSecret || 'local-development-only-auth',
 	encryptionKey,
 	frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
 	googleClientId: process.env.GOOGLE_CLIENT_ID || '',
