@@ -86,22 +86,14 @@ export async function googleRequest(env, account, path, init = {}, retry = true)
 }
 
 export function googleAuthorizationUrl(env, state) {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    throw new Error('Google OAuth is not configured');
-  }
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) throw new Error('Google OAuth is not configured');
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: env.GOOGLE_REDIRECT_URI,
     response_type: 'code',
     access_type: 'offline',
     prompt: 'consent',
-    scope: [
-      'openid',
-      'email',
-      'profile',
-      'https://www.googleapis.com/auth/drive',
-      'https://www.googleapis.com/auth/drive.metadata',
-    ].join(' '),
+    scope: ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.metadata'].join(' '),
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -204,7 +196,6 @@ export async function syncGoogleAccount(env, userId, account) {
 
   const db = sql(env);
   await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
-
   for (const file of files) {
     await db`
       INSERT INTO file_metadata (
@@ -215,43 +206,17 @@ export async function syncGoogleAccount(env, userId, account) {
         ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null},
         ${file.createdTime || null}, ${file.modifiedTime || null}
       )
-      ON CONFLICT (cloud_account_id, remote_file_id) DO UPDATE SET
-        virtual_path = EXCLUDED.virtual_path,
-        file_name = EXCLUDED.file_name,
-        is_folder = EXCLUDED.is_folder,
-        is_starred = EXCLUDED.is_starred,
-        size = EXCLUDED.size,
-        mime_type = EXCLUDED.mime_type,
-        remote_parent_id = EXCLUDED.remote_parent_id,
-        remote_created_time = EXCLUDED.remote_created_time,
-        remote_modified_time = EXCLUDED.remote_modified_time,
-        updated_at = NOW()
     `;
   }
-
   return { count: files.length };
 }
 
-export async function googleListByParent(env, account, parentId) {
-  const q = `'${escapeQuery(parentId)}' in parents and trashed = false`;
-  const data = await googleRequest(env, account, `?${new URLSearchParams({ q, fields: 'files(id,name,mimeType,size,parents,starred,createdTime,modifiedTime)', pageSize: '1000' }).toString()}`);
-  return data.files || [];
-}
-
 export async function googleSetStar(env, account, fileId, starred) {
-  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ starred: Boolean(starred) }),
-  });
+  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ starred: Boolean(starred) }) });
 }
 
 export async function googleRename(env, account, fileId, name) {
-  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
+  return googleRequest(env, account, `/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
 }
 
 export async function googleDelete(env, account, fileId) {
@@ -259,24 +224,17 @@ export async function googleDelete(env, account, fileId) {
 }
 
 export async function googleCreateFolder(env, account, name, parentId = 'root') {
-  return googleRequest(env, account, '', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
-  });
+  return googleRequest(env, account, '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }) });
 }
 
 export async function googleDownload(env, account, fileId) {
   const credentials = await getGoogleCredentials(env, account);
-  const headers = { Authorization: `Bearer ${credentials.accessToken}` };
-  const response = await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers });
-  if (!response.ok) {
-    if (response.status === 401 && credentials.refreshToken) {
-      const refreshed = await refreshAccessToken(env, account, credentials);
-      return fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${refreshed.accessToken}` } });
-    }
-    throw new Error(`Google download failed (${response.status})`);
+  let response = await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+  if (response.status === 401 && credentials.refreshToken) {
+    const refreshed = await refreshAccessToken(env, account, credentials);
+    response = await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${refreshed.accessToken}` } });
   }
+  if (!response.ok) throw new Error(`Google download failed (${response.status})`);
   return response;
 }
 
@@ -298,25 +256,34 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
   const resolvedParent = parentId || await googleFindParent(env, account, virtualPath) || 'root';
   const credentials = await getGoogleCredentials(env, account);
   const boundary = `omnicloud-${crypto.randomUUID()}`;
-  const metadata = JSON.stringify({ name: fileName, parents: [resolvedParent], mimeType: mimeType || 'application/octet-stream' });
-  const prefix = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`;
-  const suffix = `\r\n--${boundary}--`;
-
-  const chunks = [new TextEncoder().encode(prefix), body, new TextEncoder().encode(suffix)];
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
+  const metadata = JSON.stringify({ name: fileName, parents: [resolvedParent] });
+  const prefix = new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`);
+  const suffix = new TextEncoder().encode(`\r\n--${boundary}--`);
+  const source = body || new ReadableStream();
+  const multipart = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(prefix);
+      const reader = source.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.enqueue(suffix);
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
     },
   });
 
   const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,parents,createdTime,modifiedTime,starred', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${credentials.accessToken}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
-    body: stream,
+    headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: multipart,
   });
   return jsonResponse(response);
 }
