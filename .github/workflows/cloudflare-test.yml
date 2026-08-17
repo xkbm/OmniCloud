@@ -59,6 +59,14 @@ jobs:
       - name: Test storage pool and stream normalization
         run: node --test worker/test/storage-pool.test.js worker/test/storage-streams.test.js
 
+      - name: Verify storage reservation contract
+        run: |
+          grep -q "CREATE TABLE IF NOT EXISTS storage_reservations" worker/schema.sql
+          grep -q "reservation_id" worker/schema.sql
+          grep -q "storage_reservations" worker/migrations/2026-08-17-storage-reservations.sql
+          grep -q "reserveStorage" worker/src/routes/uploads.js
+          grep -q "releaseStorageReservation" worker/src/routes/uploads.js
+
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
         working-directory: worker
