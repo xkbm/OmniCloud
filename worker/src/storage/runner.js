@@ -1,10 +1,10 @@
 import { sql } from '../db.js';
-import { copyFile, transferFile } from './transfer.js';
+import { copyFile, transferFile, transferFolder } from './transfer.js';
 import { updateTransferJob } from './jobs.js';
 import { releaseStorageReservation } from './service.js';
 import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
-async function loadSingleFileTransfer(env, job) {
+async function loadTransfer(env, job) {
   const db = sql(env);
   const sourceRows = await db`
     SELECT fm.*, ca.provider, ca.email, ca.encrypted_credentials,
@@ -16,7 +16,6 @@ async function loadSingleFileTransfer(env, job) {
   `;
   const source = sourceRows[0];
   if (!source) throw Object.assign(new Error('Transfer source no longer exists'), { code: 'TRANSFER_SOURCE_NOT_FOUND', status: 404 });
-  if (source.is_folder) throw Object.assign(new Error('Folder jobs require the recursive executor'), { code: 'FOLDER_EXECUTOR_NOT_READY', status: 409 });
   if (source.account_status !== 'active') throw Object.assign(new Error('Transfer source account is not active'), { code: 'SOURCE_ACCOUNT_INACTIVE', status: 409 });
 
   const destinationRows = await db`
@@ -31,7 +30,24 @@ async function loadSingleFileTransfer(env, job) {
   if (!destination) throw Object.assign(new Error('Transfer destination folder no longer exists'), { code: 'TRANSFER_DESTINATION_NOT_FOUND', status: 404 });
   if (destination.account_status !== 'active') throw Object.assign(new Error('Transfer destination account is not active'), { code: 'DESTINATION_ACCOUNT_INACTIVE', status: 409 });
 
-  return { source, destination };
+  let nodes = null;
+  if (source.is_folder) {
+    const sourceRootPath = `${String(source.virtual_path || '/').replace(/\/$/, '')}/${source.file_name}`.replace(/^\/+/, '/');
+    nodes = await db`
+      SELECT fm.*, ca.provider, ca.email, ca.encrypted_credentials,
+        ca.status AS account_status, ca.total_space, ca.used_space
+      FROM file_metadata fm
+      JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id
+      WHERE fm.user_id=${job.user_id}
+        AND (fm.id=${source.id} OR fm.virtual_path=${sourceRootPath} OR fm.virtual_path LIKE ${`${sourceRootPath}%`})
+      ORDER BY fm.is_folder DESC, char_length(fm.virtual_path), fm.file_name
+      LIMIT 501
+    `;
+    if (nodes.length > 500) throw Object.assign(new Error('Folder contains too many items for this transfer'), { code: 'FOLDER_TRANSFER_TOO_LARGE', status: 409 });
+    if (!nodes.some((row) => row.id === source.id)) nodes.unshift(source);
+  }
+
+  return { source, destination, nodes };
 }
 
 export async function runTransferJob(env, job) {
@@ -39,7 +55,7 @@ export async function runTransferJob(env, job) {
     throw Object.assign(new Error('Transfer job executor version is not enabled'), { code: 'TRANSFER_EXECUTOR_NOT_ENABLED', status: 409 });
   }
 
-  const { source, destination } = await loadSingleFileTransfer(env, job);
+  const { source, destination, nodes } = await loadTransfer(env, job);
   const reservationId = job.payload?.reservationId || null;
   const destinationPath = `${destination.virtual_path || '/'}${destination.file_name}/`.replace(/\\+/g, '/');
   const destinationParentId = destination.remote_file_id || 'root';
@@ -79,16 +95,18 @@ export async function runTransferJob(env, job) {
       });
     };
 
-    const result = copy
-      ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress })
-      : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress });
+    const result = source.is_folder
+      ? await transferFolder({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress })
+      : copy
+        ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress })
+        : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress });
 
-    const destinationRemoteId = result.destinationRemoteId || result.remoteFileId || result.id;
+    const destinationRemoteId = result.destinationRemoteId || result.remoteFileId || result.id || result.root?.destinationRemoteId;
     if (!destinationRemoteId) {
       throw Object.assign(new Error('Transfer completed without a destination identifier'), { code: 'DESTINATION_ID_MISSING', status: 502 });
     }
 
-    const bytes = Number(result.size || source.size || 0);
+    const bytes = Number(job.bytes_total || result.size || source.size || 0);
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'verifying',
       completedNodes: 0,
@@ -97,33 +115,67 @@ export async function runTransferJob(env, job) {
     });
 
     const db = sql(env);
-    const newId = crypto.randomUUID();
-    await db`
-      INSERT INTO file_metadata
-        (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
-      VALUES
-        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${bytes},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(destinationRemoteId)},${result.destinationParentId || destinationParentId || null},${result.createdTime || null},${result.modifiedTime || null})
-      ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
-        virtual_path=EXCLUDED.virtual_path,
-        file_name=EXCLUDED.file_name,
-        is_starred=EXCLUDED.is_starred,
-        size=EXCLUDED.size,
-        mime_type=EXCLUDED.mime_type,
-        remote_parent_id=EXCLUDED.remote_parent_id,
-        remote_created_time=EXCLUDED.remote_created_time,
-        remote_modified_time=EXCLUDED.remote_modified_time,
-        updated_at=NOW()
-    `;
+    if (source.is_folder) {
+      const resultNodes = [result.root, ...result.nodes];
+      const sourceById = new Map(nodes.map((node) => [node.id, node]));
+      for (const node of resultNodes) {
+        const original = sourceById.get(node.sourceId) || source;
+        await db`
+          INSERT INTO file_metadata
+            (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+          VALUES
+            (${crypto.randomUUID()},${job.user_id},${node.destinationPath},${node.fileName},${Boolean(node.isFolder)},${Boolean(original.is_starred)},${Number(node.size || 0)},${node.mimeType || original.mime_type || null},${destination.cloud_account_id},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null})
+          ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+            virtual_path=EXCLUDED.virtual_path,
+            file_name=EXCLUDED.file_name,
+            is_folder=EXCLUDED.is_folder,
+            is_starred=EXCLUDED.is_starred,
+            size=EXCLUDED.size,
+            mime_type=EXCLUDED.mime_type,
+            remote_parent_id=EXCLUDED.remote_parent_id,
+            remote_created_time=EXCLUDED.remote_created_time,
+            remote_modified_time=EXCLUDED.remote_modified_time,
+            updated_at=NOW()
+        `;
+      }
+
+      const sourceRootPath = `${String(source.virtual_path || '/').replace(/\/$/, '')}/${source.file_name}`.replace(/^\/+/, '/');
+      await db`
+        DELETE FROM file_metadata
+        WHERE user_id=${job.user_id}
+          AND (id=${source.id} OR virtual_path=${sourceRootPath} OR virtual_path LIKE ${`${sourceRootPath}%`})
+      `;
+    } else {
+      const newId = crypto.randomUUID();
+      const bytesForFile = Number(result.size || source.size || 0);
+      await db`
+        INSERT INTO file_metadata
+          (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+        VALUES
+          (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${bytesForFile},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(destinationRemoteId)},${result.destinationParentId || destinationParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+        ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+          virtual_path=EXCLUDED.virtual_path,
+          file_name=EXCLUDED.file_name,
+          is_starred=EXCLUDED.is_starred,
+          size=EXCLUDED.size,
+          mime_type=EXCLUDED.mime_type,
+          remote_parent_id=EXCLUDED.remote_parent_id,
+          remote_created_time=EXCLUDED.remote_created_time,
+          remote_modified_time=EXCLUDED.remote_modified_time,
+          updated_at=NOW()
+      `;
+      await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${job.user_id}`;
+    }
 
     await completeSaga(env, sagaId);
     if (reservationId) await releaseStorageReservation(env, reservationId, job.user_id);
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'completed',
-      completedNodes: 1,
+      completedNodes: Number(job.total_nodes || (source.is_folder ? nodes.length : 1)),
       bytesCompleted: bytes,
-      payload: { destinationFileId: newId, destinationRemoteId, remoteResult: result, sagaId, reservationReleased: Boolean(reservationId) },
+      payload: { destinationRemoteId, remoteResult: result, sagaId, reservationReleased: Boolean(reservationId) },
     });
-    return { id: job.id, destinationFileId: newId, bytesCompleted: bytes };
+    return { id: job.id, destinationRemoteId, bytesCompleted: bytes };
   } catch (error) {
     if (sagaId) {
       try {
