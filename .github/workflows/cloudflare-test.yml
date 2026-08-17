@@ -46,6 +46,7 @@ jobs:
           node --check worker/src/storage/streams.js
           node --check worker/src/storage/transfer.js
           node --check worker/src/routes/accounts.js
+          node --check worker/src/routes/backgroundMove.js
           node --check worker/src/routes/copy.js
           node --check worker/src/routes/files.js
           node --check worker/src/routes/move.js
@@ -91,6 +92,21 @@ jobs:
           grep -q "export class TransferScheduler" worker/transferScheduler.js
           grep -q "export { TransferScheduler, UploadProgress }" worker/src/index.js
           grep -q "transferRoutes" worker/src/index.js
+
+      - name: Verify background move dispatch contract
+        run: |
+          grep -q "backgroundMoveRoutes" worker/src/index.js
+          grep -q "TRANSFER_JOB_THRESHOLD_BYTES" worker/src/routes/backgroundMove.js || grep -q "50 \* 1024 \* 1024" worker/src/routes/backgroundMove.js
+          grep -q "createTransferJob" worker/src/routes/backgroundMove.js
+          grep -q "reserveStorage" worker/src/routes/backgroundMove.js
+          grep -q "return next()" worker/src/routes/backgroundMove.js
+
+      - name: Verify frontend transfer client contract
+        run: |
+          grep -q "listTransfers" frontend/src/services/api.js
+          grep -q "getTransfer" frontend/src/services/api.js
+          grep -q "cancelTransfer" frontend/src/services/api.js
+          test -f frontend/src/composables/useTransfers.js
 
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
