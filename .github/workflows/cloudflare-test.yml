@@ -88,6 +88,16 @@ jobs:
           grep -q "STORAGE_TRANSIENT" frontend/src/services/api.js
           grep -q "retryCount" frontend/src/stores/uploadQueue.js
 
+      - name: Verify storage health contract
+        run: |
+          grep -q "health_status" worker/schema.sql
+          grep -q "health_checked_at" worker/schema.sql
+          grep -q "health_failure_count" worker/schema.sql
+          grep -q "health_status" worker/migrations/2026-08-17-storage-health.sql
+          grep -q "placementBackends" worker/src/storage/pool.js
+          grep -q "placementHealthy" worker/src/storage/backend.js
+          grep -q "health_status" worker/src/storage/service.js
+
       - name: Verify virtual folder namespace contract
         run: |
           grep -q "CREATE TABLE IF NOT EXISTS virtual_folders" worker/schema.sql
