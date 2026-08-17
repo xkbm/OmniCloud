@@ -11,6 +11,7 @@ function display(row) {
     modifiedTime: row.remote_modified_time || null,
     capabilities: {
       starred: row.provider === 'google_drive',
+      move: true,
       rename: true,
       delete: true,
     },
