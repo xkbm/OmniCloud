@@ -100,7 +100,7 @@ function isRemoteNotFound(error) {
   return status === 404 || /not[_ -]?found|does not exist|no such file|resource.*missing/i.test(String(error?.message || ''));
 }
 
-async function reconcileCrossAccountMove(db, saga) {
+async function reconcileCrossAccountMove(env, db, saga) {
   const payload = saga.payload || {};
   const destinationAccountId = payload.destinationAccountId;
   const destinationRemoteId = payload.destinationRemoteId;
@@ -143,7 +143,7 @@ async function reconcileCrossAccountMove(db, saga) {
     if (source) {
       const sourceAccount = accountFromRow({ ...source, id: source.cloud_account_id, user_id: saga.user_id });
       try {
-        await performDelete({}, sourceAccount, { ...source, remote_file_id: payload.sourceRemoteId || source.remote_file_id });
+        await performDelete(env, sourceAccount, { ...source, remote_file_id: payload.sourceRemoteId || source.remote_file_id });
       } catch (error) {
         if (!isRemoteNotFound(error)) throw error;
       }
@@ -154,7 +154,7 @@ async function reconcileCrossAccountMove(db, saga) {
 
 async function reconcileMove(env, db, saga) {
   if (saga.payload?.crossAccount) {
-    await reconcileCrossAccountMove(db, saga);
+    await reconcileCrossAccountMove(env, db, saga);
     return;
   }
 
