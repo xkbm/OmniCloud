@@ -7,6 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 APP_MODE = "hosted"
 AUTH_COOKIE_NAME = "omnicloud_session"
 AUTH_SESSION_TTL_HOURS = "336"
+# Keep aligned with the Cloudflare request-body ceiling for the deployed plan.
+# Raise this only when the Cloudflare account/zone limit has also been raised.
+MAX_FILE_SIZE = "104857600"
 
 [[durable_objects.bindings]]
 name = "UPLOAD_PROGRESS"
