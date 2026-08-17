@@ -326,6 +326,26 @@ export class GoogleDriveAdapter extends BaseCloudAdapter {
 		});
 	}
 
+	async moveFile(fileRecord, targetFolder) {
+		const drive = await this.getDriveClient();
+		const targetFolderId = targetFolder?.remote_file_id || targetFolder?.remote_parent_id;
+		if (!targetFolderId) {
+			throw new Error('Target folder id is required');
+		}
+
+		const currentParentId = fileRecord.remote_parent_id || null;
+		const addParents = targetFolderId;
+		const removeParents = currentParentId && currentParentId !== targetFolderId ? currentParentId : undefined;
+
+		await drive.files.update({
+			fileId: fileRecord.remote_file_id,
+			addParents,
+			removeParents,
+			requestBody: {},
+			fields: 'id, parents',
+		});
+	}
+
 	async deleteFile(fileRecord) {
 		const drive = await this.getDriveClient();
 		await drive.files.delete({
