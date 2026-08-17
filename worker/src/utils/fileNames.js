@@ -14,13 +14,7 @@ export function sanitizeFileName(input, { fallback = 'untitled', maxLength = 255
 }
 
 export function normalizeVirtualPath(input = '/') {
-  if (!input || input === '/') return '/';
-  const clean = String(input)
-    .replace(/\\/g, '/')
-    .replace(/\/+/g, '/')
-    .replace(/^\/+/, '/')
-    .replace(/\0/g, '')
-    .trim();
-  if (!clean || clean === '/') return '/';
-  return clean.endsWith('/') ? clean : `${clean}/`;
+  const raw = String(input ?? '/').replace(/\\/g, '/').replace(CONTROL_CHARS, '');
+  const segments = raw.split('/').map((segment) => segment.trim()).filter((segment) => segment && segment !== '.' && segment !== '..');
+  return segments.length ? `/${segments.join('/')}/` : '/';
 }
