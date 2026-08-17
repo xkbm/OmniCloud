@@ -1,4 +1,4 @@
-import { getProviderCapabilities, PROVIDER_CAPABILITIES } from './capabilities.js';
+import { getProviderCapabilities } from './capabilities.js';
 
 export const PROVIDER_LABELS = Object.freeze({
   google_drive: 'Google Drive',
@@ -61,5 +61,3 @@ export class StorageBackend {
 export function createStorageBackend(account) {
   return new StorageBackend(account);
 }
-
-export { PROVIDER_CAPABILITIES };
