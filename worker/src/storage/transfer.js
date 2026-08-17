@@ -81,7 +81,7 @@ async function transferFileNode({ env, userId, source, destination, destinationP
 
 async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource }) {
   if (nodes.length > MAX_RECURSIVE_TRANSFER_NODES) {
-    throw Object.assign(new Error(`Folder contains too many items for an interactive transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
+    throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
   }
 
   const destinationAccount = accountFromRow(destination, userId);
@@ -154,5 +154,12 @@ export async function copyFile(options) {
   if (source.is_folder) throw Object.assign(new Error('Recursive folder copy is not available yet'), { status: 409, code: 'FOLDER_COPY_UNSUPPORTED' });
   const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: false });
   await onRemoteSuccess?.(result);
+  return result;
+}
+
+export async function copyFolder(options) {
+  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess } = options;
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: false });
+  await onRemoteSuccess?.({ tree: result });
   return result;
 }
