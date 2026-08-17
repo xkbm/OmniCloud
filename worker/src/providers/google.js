@@ -192,7 +192,7 @@ export async function googleDelete(env, account, fileId) {
 }
 
 export async function googleCreateFolder(env, account, name, parentId = 'root') {
-  return googleRequest(env, account, '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }) });
+  return googleRequest(env, account, '/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }) });
 }
 
 export async function googleDownload(env, account, fileId) {
