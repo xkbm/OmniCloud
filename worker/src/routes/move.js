@@ -1,19 +1,8 @@
 import { performMove } from '../providers/storage.js';
 import { transferFile as transferCrossBackend, transferFolder as transferFolderCrossBackend, MAX_RECURSIVE_TRANSFER_NODES } from '../storage/transfer.js';
 import { getProviderCapabilities } from '../storage/capabilities.js';
-import { createTransferJob } from '../storage/jobs.js';
-import { reserveStorage } from '../storage/service.js';
 import { requireUser, sql } from '../db.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
-
-const DEFAULT_BACKGROUND_TRANSFER_THRESHOLD_BYTES = 256 * 1024 * 1024;
-
-function getBackgroundTransferThreshold(env) {
-  const configured = Number(env.TRANSFER_BACKGROUND_THRESHOLD_BYTES);
-  return Number.isSafeInteger(configured) && configured > 0
-    ? configured
-    : DEFAULT_BACKGROUND_TRANSFER_THRESHOLD_BYTES;
-}
 
 function normalizePath(input = '/') {
   const value = String(input || '/').replace(/\\/g, '/');
@@ -128,50 +117,6 @@ export async function moveRoutes(app) {
       const transferOperation = crossAccount || transferFallback;
       const transferDestination = destination || source;
       let treeNodes = null;
-
-      if (
-        transferOperation
-        && !source.is_folder
-        && destination
-        && source.size >= getBackgroundTransferThreshold(c.env)
-      ) {
-        const reservation = await reserveStorage(c.env, {
-          userId: user.id,
-          accountId: destination.cloud_account_id,
-          bytes: Number(source.size || 0),
-          uploadId: `transfer:${crypto.randomUUID()}`,
-        });
-
-        const job = await createTransferJob(c.env, {
-          userId: user.id,
-          operation: 'move',
-          sourceFileId: source.id,
-          destinationFolderId: destination.id,
-          totalNodes: 1,
-          bytesTotal: Number(source.size || 0),
-          payload: {
-            executorVersion: 'v1',
-            reservationId: reservation.id,
-            sourceAccountId: source.cloud_account_id,
-            destinationAccountId: destination.cloud_account_id,
-            destinationPath,
-            crossAccount,
-            transferFallback,
-          },
-        });
-
-        return c.json({
-          data: {
-            accepted: true,
-            queued: true,
-            transferJobId: job.id,
-            file: {
-              id: source.id,
-              virtual_path: destinationPath,
-            },
-          },
-        }, 202);
-      }
 
       if (transferOperation && source.is_folder) {
         const sourceRootPath = normalizePath(`${currentParentPath}${source.file_name}`);
