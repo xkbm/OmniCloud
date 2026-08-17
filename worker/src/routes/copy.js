@@ -1,6 +1,16 @@
 import { requireUser, sql } from '../db.js';
-import { copyFile } from '../storage/transfer.js';
+import { copyFile, copyFolder } from '../storage/transfer.js';
+import { chooseStorageBackend } from '../storage/service.js';
+import {
+  ensurePhysicalFolderPath,
+  ensureVirtualFolder,
+  getVirtualFolder,
+  upsertVirtualFolderMaterialization,
+} from '../storage/virtualFolders.js';
+import { performCreateFolder } from '../providers/storage.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
+
+const MAX_VIRTUAL_COPY_NODES = 500;
 
 function normalizePath(input = '/') {
   const value = String(input || '/').replace(/\\/g, '/');
@@ -9,12 +19,281 @@ function normalizePath(input = '/') {
   return parts.length ? `/${parts.join('/')}/` : '/';
 }
 
+function joinVirtualPath(parent, name) {
+  const normalizedParent = normalizePath(parent || '/');
+  return normalizePath(`${normalizedParent === '/' ? '' : normalizedParent}${name}`);
+}
+
+function folderNode(row, fallbackAccountId) {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    virtual_path: row.parent_path || '/',
+    file_name: row.name,
+    is_folder: true,
+    is_starred: false,
+    size: 0,
+    mime_type: 'application/vnd.google-apps.folder',
+    cloud_account_id: row.cloud_account_id || fallbackAccountId,
+    remote_file_id: row.remote_file_id || row.id,
+    remote_parent_id: row.remote_parent_id || null,
+    provider: row.provider || null,
+    email: row.email || null,
+    account_status: row.account_status || 'active',
+  };
+}
+
+async function loadVirtualCopySource(db, userId, sourceId) {
+  const sourceRows = await db`
+    SELECT vf.*,
+           vfm.cloud_account_id,
+           vfm.remote_file_id,
+           vfm.remote_parent_id,
+           ca.provider,
+           ca.email,
+           ca.status AS account_status
+    FROM virtual_folders vf
+    LEFT JOIN LATERAL (
+      SELECT vfm.cloud_account_id, vfm.remote_file_id, vfm.remote_parent_id
+      FROM virtual_folder_materializations vfm
+      JOIN cloud_accounts ca2 ON ca2.id=vfm.cloud_account_id AND ca2.user_id=vfm.user_id AND ca2.status='active'
+      WHERE vfm.virtual_folder_id=vf.id
+        AND vfm.user_id=${userId}
+        AND vfm.status='active'
+      ORDER BY ca2.created_at ASC, ca2.id ASC
+      LIMIT 1
+    ) vfm ON TRUE
+    LEFT JOIN cloud_accounts ca ON ca.id=vfm.cloud_account_id AND ca.user_id=vf.user_id
+    WHERE vf.id=${sourceId} AND vf.user_id=${userId}
+    LIMIT 1
+  `;
+  const source = sourceRows[0];
+  if (!source) return null;
+
+  const sourcePath = normalizePath(source.path);
+  const allFileCountRows = await db`
+    SELECT COUNT(*)::BIGINT AS count
+    FROM file_metadata
+    WHERE user_id=${userId}
+      AND is_folder=FALSE
+      AND (virtual_path=${sourcePath} OR virtual_path LIKE ${`${sourcePath}%`})
+  `;
+  const activeFileCountRows = await db`
+    SELECT COUNT(*)::BIGINT AS count
+    FROM file_metadata fm
+    JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id AND ca.user_id=fm.user_id
+    WHERE fm.user_id=${userId}
+      AND fm.is_folder=FALSE
+      AND ca.status='active'
+      AND (fm.virtual_path=${sourcePath} OR fm.virtual_path LIKE ${`${sourcePath}%`})
+  `;
+  if (Number(allFileCountRows[0]?.count || 0) !== Number(activeFileCountRows[0]?.count || 0)) {
+    throw Object.assign(new Error('One or more source files are on an inactive storage account'), { status: 409, code: 'SOURCE_ACCOUNT_INACTIVE' });
+  }
+
+  const [folderRows, fileRows] = await Promise.all([
+    db`
+      SELECT vf.id,vf.user_id,vf.path,vf.name,vf.parent_path,
+             vfm.cloud_account_id,vfm.remote_file_id,vfm.remote_parent_id,
+             ca.provider,ca.email,ca.status AS account_status
+      FROM virtual_folders vf
+      LEFT JOIN LATERAL (
+        SELECT vfm.cloud_account_id,vfm.remote_file_id,vfm.remote_parent_id
+        FROM virtual_folder_materializations vfm
+        JOIN cloud_accounts ca2 ON ca2.id=vfm.cloud_account_id AND ca2.user_id=vfm.user_id AND ca2.status='active'
+        WHERE vfm.virtual_folder_id=vf.id AND vfm.user_id=${userId} AND vfm.status='active'
+        ORDER BY ca2.created_at ASC,ca2.id ASC
+        LIMIT 1
+      ) vfm ON TRUE
+      LEFT JOIN cloud_accounts ca ON ca.id=vfm.cloud_account_id AND ca.user_id=vf.user_id
+      WHERE vf.user_id=${userId}
+        AND (vf.path=${sourcePath} OR vf.path LIKE ${`${sourcePath}%`})
+      ORDER BY length(vf.path) ASC, vf.path ASC
+    `,
+    db`
+      SELECT fm.*,ca.provider,ca.email,ca.status AS account_status
+      FROM file_metadata fm
+      JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id AND ca.user_id=fm.user_id
+      WHERE fm.user_id=${userId}
+        AND fm.is_folder=FALSE
+        AND ca.status='active'
+        AND (fm.virtual_path=${sourcePath} OR fm.virtual_path LIKE ${`${sourcePath}%`})
+      ORDER BY length(fm.virtual_path) ASC, fm.virtual_path ASC, fm.file_name ASC
+    `,
+  ]);
+
+  const nodes = [
+    ...folderRows.map((row) => folderNode(row, source.cloud_account_id)),
+    ...fileRows,
+  ];
+
+  if (nodes.length > MAX_VIRTUAL_COPY_NODES) {
+    throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_VIRTUAL_COPY_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
+  }
+
+  const totalBytes = fileRows.reduce((sum, row) => sum + Math.max(0, Number(row.size || 0)), 0);
+  return { source, sourcePath, nodes, totalBytes };
+}
+
 export async function copyRoutes(app) {
   app.post('/api/files/:id/copy', async (c) => {
     let sagaId = null;
     try {
       const user = await requireUser(c);
       const db = sql(c.env);
+      const body = await c.req.json().catch(() => ({}));
+      const destinationId = String(body.destination_folder_id || body.target_folder_id || body.destinationFolderId || body.targetFolderId || '').trim();
+      const requestedPath = body.virtual_path ?? body.virtualPath ?? null;
+
+      const virtualSource = await getVirtualFolder(c.env, user.id, c.req.param('id'));
+      if (virtualSource) {
+        const loaded = await loadVirtualCopySource(db, user.id, virtualSource.id);
+        const source = loaded.source;
+
+        let destinationPath = '/';
+        if (destinationId) {
+          const destinationVirtualRows = await db`
+            SELECT id,path,name,parent_path
+            FROM virtual_folders
+            WHERE id=${destinationId} AND user_id=${user.id}
+            LIMIT 1
+          `;
+          const destinationVirtual = destinationVirtualRows[0] || null;
+          if (destinationVirtual) {
+            destinationPath = normalizePath(destinationVirtual.path);
+          } else {
+            const destinationPhysicalRows = await db`
+              SELECT fm.virtual_path,fm.file_name,fm.is_folder
+              FROM file_metadata fm
+              WHERE fm.id=${destinationId} AND fm.user_id=${user.id} AND fm.is_folder=TRUE
+              LIMIT 1
+            `;
+            const destinationPhysical = destinationPhysicalRows[0];
+            if (!destinationPhysical) return c.json({ error: 'Destination folder not found', code: 'DESTINATION_NOT_FOUND' }, 404);
+            const destinationVirtualPath = normalizePath(`${destinationPhysical.virtual_path || '/'}${destinationPhysical.file_name}`);
+            const parentVirtual = await getVirtualFolder(c.env, user.id, destinationVirtualPath);
+            if (!parentVirtual) return c.json({ error: 'Destination is not a virtual folder', code: 'DESTINATION_NOT_VIRTUAL' }, 409);
+            destinationPath = parentVirtual.path;
+          }
+        } else if (requestedPath !== null) {
+          destinationPath = normalizePath(requestedPath);
+          if (destinationPath !== '/') {
+            const destinationVirtual = await getVirtualFolder(c.env, user.id, destinationPath);
+            if (!destinationVirtual) return c.json({ error: 'Destination folder not found', code: 'DESTINATION_NOT_FOUND' }, 404);
+          }
+        } else {
+          return c.json({ error: 'Destination folder is required', code: 'DESTINATION_REQUIRED' }, 400);
+        }
+
+        const destinationRootPath = joinVirtualPath(destinationPath, source.name);
+        const collision = await getVirtualFolder(c.env, user.id, destinationRootPath);
+        if (collision) return c.json({ error: 'A folder with that name already exists at the destination', code: 'DESTINATION_EXISTS' }, 409);
+
+        const destinationAccountChoice = await chooseStorageBackend(c.env, user.id, loaded.totalBytes);
+        if (!destinationAccountChoice) return c.json({ error: 'No storage backend has enough effective capacity', code: 'NO_STORAGE_CAPACITY' }, 409);
+        const destinationAccount = (await db`
+          SELECT *
+          FROM cloud_accounts
+          WHERE id=${destinationAccountChoice.id} AND user_id=${user.id} AND status='active'
+          LIMIT 1
+        `)[0];
+        if (!destinationAccount) return c.json({ error: 'Destination storage account is no longer active', code: 'DESTINATION_ACCOUNT_INACTIVE' }, 409);
+
+        const destinationParent = await ensurePhysicalFolderPath(db, c.env, user.id, destinationAccount, destinationPath);
+        const destinationRootFolder = await performCreateFolder(c.env, destinationAccount, {
+          name: source.name,
+          virtualPath: destinationPath,
+          remoteParentId: destinationParent.remoteFileId,
+        });
+        if (!destinationRootFolder.remoteFileId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
+
+        const destinationVirtualFolder = await ensureVirtualFolder(c.env, user.id, destinationRootPath);
+        const destinationRootMaterialization = await upsertVirtualFolderMaterialization(c.env, {
+          userId: user.id,
+          virtualFolderId: destinationVirtualFolder.id,
+          cloudAccountId: destinationAccount.id,
+          remoteFileId: destinationRootFolder.remoteFileId,
+          remoteParentId: destinationRootFolder.remoteParentId || destinationParent.remoteFileId || null,
+        });
+
+        sagaId = await startSaga(c.env, {
+          userId: user.id,
+          accountId: destinationAccount.id,
+          fileId: null,
+          operation: 'move',
+          payload: {
+            copy: true,
+            virtualFolderCopy: true,
+            sourceVirtualFolderId: source.id,
+            destinationVirtualFolderId: destinationVirtualFolder.id,
+            destinationVirtualRootPath: destinationRootPath,
+            destinationAccountId: destinationAccount.id,
+          },
+        });
+
+        const result = await copyFolder({
+          env: c.env,
+          userId: user.id,
+          source,
+          destination: destinationAccount,
+          destinationPath: destinationRootPath,
+          destinationParentId: destinationRootMaterialization.remote_parent_id || destinationParent.remoteFileId || null,
+          nodes: loaded.nodes,
+          existingRootRemoteId: destinationRootMaterialization.remote_file_id,
+          onRemoteSuccess: async (remote) => updateSaga(c.env, sagaId, 'remote_succeeded', remote),
+        });
+
+        for (const node of result.nodes) {
+          if (node.isFolder) {
+            const destinationFolder = await ensureVirtualFolder(c.env, user.id, node.destinationPath);
+            await upsertVirtualFolderMaterialization(c.env, {
+              userId: user.id,
+              virtualFolderId: destinationFolder.id,
+              cloudAccountId: destinationAccount.id,
+              remoteFileId: node.destinationRemoteId,
+              remoteParentId: node.destinationParentId || null,
+            });
+          }
+        }
+
+        for (const node of [result.root, ...result.nodes]) {
+          await db`
+            INSERT INTO file_metadata
+              (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+            VALUES
+              (${crypto.randomUUID()},${user.id},${node.destinationPath || '/'},${node.fileName || 'file'},${Boolean(node.isFolder)},FALSE,${Number(node.size || 0)},${node.mimeType || null},${destinationAccount.id},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null})
+            ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+              virtual_path=EXCLUDED.virtual_path,
+              file_name=EXCLUDED.file_name,
+              is_folder=EXCLUDED.is_folder,
+              size=EXCLUDED.size,
+              mime_type=EXCLUDED.mime_type,
+              remote_parent_id=EXCLUDED.remote_parent_id,
+              remote_created_time=EXCLUDED.remote_created_time,
+              remote_modified_time=EXCLUDED.remote_modified_time,
+              updated_at=NOW()
+          `;
+        }
+
+        await completeSaga(c.env, sagaId);
+        return c.json({
+          data: {
+            success: true,
+            copied: true,
+            virtualFolder: {
+              id: destinationVirtualFolder.id,
+              virtualFolderId: destinationVirtualFolder.id,
+              virtualPath: destinationRootPath,
+              fileName: source.name,
+              is_folder: true,
+              cloudAccountId: destinationAccount.id,
+              provider: destinationAccount.provider,
+              remoteFileId: destinationRootFolder.remoteFileId,
+            },
+          },
+        }, 201);
+      }
+
       const sourceRows = await db`
         SELECT fm.*,ca.provider,ca.email,ca.encrypted_credentials,ca.status AS account_status,ca.total_space,ca.used_space
         FROM file_metadata fm JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id
@@ -25,9 +304,6 @@ export async function copyRoutes(app) {
       if (source.is_folder) return c.json({ error: 'Folder copy requires recursive transfer and is not available yet', code: 'FOLDER_COPY_UNSUPPORTED' }, 409);
       if (source.account_status !== 'active') return c.json({ error: 'The file account is no longer connected', code: 'SOURCE_ACCOUNT_INACTIVE' }, 409);
 
-      const body = await c.req.json().catch(() => ({}));
-      const destinationId = String(body.destination_folder_id || body.target_folder_id || body.destinationFolderId || body.targetFolderId || '').trim();
-      const requestedPath = body.virtual_path ?? body.virtualPath ?? null;
       let destination = null;
       if (destinationId) {
         const rows = await db`
