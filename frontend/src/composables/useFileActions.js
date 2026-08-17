@@ -170,6 +170,26 @@ export function useFileActions({
 		}
 	}
 
+	async function moveFilesToPath(targets, virtualPath) {
+		if (!targets.length) return;
+		if (targets.some((file) => file.provider !== 'google_drive')) {
+			errorRef.value = 'Mover archivos actualmente solo está disponible para Google Drive.';
+			return;
+		}
+
+		errorRef.value = '';
+		await runWithProgress(
+			'Moviendo',
+			async () => {
+				for (const target of targets) {
+					await api.moveFile(target.id, { virtual_path: virtualPath });
+				}
+			},
+		);
+		clearSelection();
+		await refresh();
+	}
+
 	async function moveSelectedFile() {
 		const targets = getActionFiles();
 		if (!targets.length || targets.some((file) => file.provider !== 'google_drive')) {
@@ -182,19 +202,33 @@ export function useFileActions({
 		if (destination === null) return;
 		const virtualPath = destination.trim() || '/';
 		closeContextMenu();
-		errorRef.value = '';
 
 		try {
-			await runWithProgress(
-				'Moviendo',
-				async () => {
-					for (const target of targets) {
-						await api.moveFile(target.id, { virtual_path: virtualPath });
-					}
-				},
-			);
-			clearSelection();
-			await refresh();
+			await moveFilesToPath(targets, virtualPath);
+		} catch (error) {
+			errorRef.value = error.message;
+		}
+	}
+
+	async function handleDragMoveEvent(event) {
+		const detail = event.detail || {};
+		const sourceFile = detail.sourceFile;
+		const targetFolder = detail.targetFolder;
+		if (!sourceFile || !targetFolder?.is_folder) return;
+		if (sourceFile.provider !== 'google_drive' || targetFolder.provider !== 'google_drive') {
+			errorRef.value = 'Mover archivos actualmente solo está disponible para Google Drive.';
+			return;
+		}
+
+		const selectedTargets = detail.sourceWasSelected && selectedFileIds.value.has(sourceFile.id)
+			? selectedFiles.value
+			: [sourceFile];
+		const basePath = targetFolder.virtual_path || '/';
+		const targetPath = `${basePath === '/' ? '/' : basePath}${targetFolder.file_name}/`;
+
+		try {
+			closeContextMenu();
+			await moveFilesToPath(selectedTargets, targetPath);
 		} catch (error) {
 			errorRef.value = error.message;
 		}
@@ -236,8 +270,14 @@ export function useFileActions({
 		moveSelectedFile();
 	}
 
-	onMounted(() => window.addEventListener('omnicloud-move-file', handleMoveEvent));
-	onBeforeUnmount(() => window.removeEventListener('omnicloud-move-file', handleMoveEvent));
+	onMounted(() => {
+		window.addEventListener('omnicloud-move-file', handleMoveEvent);
+		window.addEventListener('omnicloud-drag-move', handleDragMoveEvent);
+	});
+	onBeforeUnmount(() => {
+		window.removeEventListener('omnicloud-move-file', handleMoveEvent);
+		window.removeEventListener('omnicloud-drag-move', handleDragMoveEvent);
+	});
 
 	return {
 		contextMenu,
