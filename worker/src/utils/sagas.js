@@ -1,6 +1,5 @@
 import { sql } from '../db.js';
 import { performMove } from '../providers/storage.js';
-import { ensureVirtualFolder, upsertVirtualFolderMaterialization } from '../storage/virtualFolders.js';
 
 export const SAGA_STATUSES = new Set(['pending_remote', 'remote_succeeded', 'completed', 'failed', 'pending_reconcile']);
 
@@ -59,6 +58,15 @@ async function reconcileRename(db, saga) {
   await db`UPDATE file_metadata SET file_name=${newName}, updated_at=NOW() WHERE id=${saga.file_id} AND user_id=${saga.user_id}`;
 }
 
+function splitVirtualFolderPath(path) {
+  const normalized = String(path || '/').replace(/\\/g, '/').replace(/^\/+/, '/').replace(/\/+/g, '/');
+  const clean = normalized.replace(/^\/+|\/+$/g, '');
+  const parts = clean ? clean.split('/').filter(Boolean) : [];
+  const name = parts.at(-1) || '/';
+  const parentPath = parts.length > 1 ? `/${parts.slice(0, -1).join('/')}/` : '/';
+  return { path: parts.length ? `/${parts.join('/')}/` : '/', name, parentPath };
+}
+
 async function reconcileVirtualFolderCopy(db, saga, tree) {
   const payload = saga.payload || {};
   const destinationVirtualFolderId = payload.destinationVirtualFolderId;
@@ -66,25 +74,32 @@ async function reconcileVirtualFolderCopy(db, saga, tree) {
   const accountId = tree.root?.destinationAccountId || payload.destinationAccountId;
   if (!destinationVirtualFolderId || !destinationVirtualRootPath || !accountId) throw new Error('Virtual folder copy saga is missing destination metadata');
 
-  const rootFolder = await ensureVirtualFolder(db.__env || null, saga.user_id, destinationVirtualRootPath);
-  if (!rootFolder || rootFolder.id !== destinationVirtualFolderId) {
-    const current = (await db`SELECT id FROM virtual_folders WHERE id=${destinationVirtualFolderId} AND user_id=${saga.user_id} LIMIT 1`)[0];
-    if (!current) throw new Error('Destination virtual folder no longer exists');
-  }
+  const currentRoot = (await db`SELECT id FROM virtual_folders WHERE id=${destinationVirtualFolderId} AND user_id=${saga.user_id} LIMIT 1`)[0];
+  if (!currentRoot) throw new Error('Destination virtual folder no longer exists');
 
   const records = [tree.root, ...(Array.isArray(tree.nodes) ? tree.nodes : [])];
   for (const node of records) {
     if (node.isFolder) {
-      const folderPath = String(node.destinationPath || destinationVirtualRootPath);
-      const folder = await ensureVirtualFolder(db.__env || null, saga.user_id, folderPath);
-      if (!folder) throw new Error('Destination virtual folder could not be reconciled');
-      await upsertVirtualFolderMaterialization(db.__env || null, {
-        userId: saga.user_id,
-        virtualFolderId: folder.id,
-        cloudAccountId: accountId,
-        remoteFileId: node.destinationRemoteId,
-        remoteParentId: node.destinationParentId || null,
-      });
+      const folderPath = splitVirtualFolderPath(node.destinationPath || destinationVirtualRootPath);
+      const folderRows = await db`
+        INSERT INTO virtual_folders (id,user_id,path,name,parent_path)
+        VALUES (${node.destinationVirtualFolderId || crypto.randomUUID()},${saga.user_id},${folderPath.path},${folderPath.name},${folderPath.parentPath})
+        ON CONFLICT (user_id,path)
+        DO UPDATE SET name=EXCLUDED.name,parent_path=EXCLUDED.parent_path,updated_at=NOW()
+        RETURNING id
+      `;
+      const virtualFolderId = folderRows[0]?.id || (await db`
+        SELECT id FROM virtual_folders WHERE user_id=${saga.user_id} AND path=${folderPath.path} LIMIT 1
+      `)[0]?.id;
+      if (!virtualFolderId) throw new Error('Destination virtual folder could not be reconciled');
+      await db`
+        INSERT INTO virtual_folder_materializations
+          (id,virtual_folder_id,user_id,cloud_account_id,remote_file_id,remote_parent_id,status)
+        VALUES
+          (${crypto.randomUUID()},${virtualFolderId},${saga.user_id},${accountId},${String(node.destinationRemoteId)},${node.destinationParentId || null},'active')
+        ON CONFLICT (virtual_folder_id,cloud_account_id)
+        DO UPDATE SET remote_file_id=EXCLUDED.remote_file_id,remote_parent_id=EXCLUDED.remote_parent_id,status='active',updated_at=NOW()
+      `;
     }
 
     await db`INSERT INTO file_metadata
@@ -106,9 +121,7 @@ async function reconcileVirtualFolderCopy(db, saga, tree) {
 
 async function reconcileTransferredTree(db, saga, tree, env) {
   if (saga.payload?.virtualFolderCopy) {
-    db.__env = env;
     await reconcileVirtualFolderCopy(db, saga, tree);
-    delete db.__env;
     return;
   }
 
