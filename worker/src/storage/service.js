@@ -43,23 +43,16 @@ function weightedCandidates(candidates) {
   });
 }
 
-async function nextPersistentCursor(db, userId, modulus) {
-  const rows = await db`
-    INSERT INTO user_settings (id, user_id, key, value, updated_at)
-    VALUES (${crypto.randomUUID()}, ${userId}, 'allocation_rr_cursor', '0', NOW())
-    ON CONFLICT (user_id, key) DO UPDATE
-    SET value = ((CAST(user_settings.value AS BIGINT) + 1) % ${modulus})::text,
-        updated_at = NOW()
-    RETURNING value
-  `;
-  return Number.parseInt(rows[0]?.value || '0', 10);
-}
-
-export async function chooseStorageBackend(env, userId, size, { backendId = null } = {}) {
+export async function chooseStorageBackend(env, userId, size, { backendId = null, excludeBackendIds = [] } = {}) {
   const pool = await loadStoragePool(env, userId);
-  if (backendId) return pool.chooseBackend(size, { backendId });
+  const excluded = new Set((Array.isArray(excludeBackendIds) ? excludeBackendIds : [excludeBackendIds]).filter(Boolean).map(String));
+  const candidates = pool.activeBackends.filter((backend) => !excluded.has(backend.id) && backend.canStore(size));
 
-  const candidates = pool.activeBackends.filter((backend) => backend.canStore(size));
+  if (backendId) {
+    const requested = pool.getBackend(backendId);
+    return requested && !excluded.has(requested.id) && requested.canStore(size) ? requested : null;
+  }
+
   if (!candidates.length) return null;
 
   if (pool.strategy === 'round_robin') {
@@ -75,7 +68,19 @@ export async function chooseStorageBackend(env, userId, size, { backendId = null
     return weighted[cursor % weighted.length];
   }
 
-  return pool.chooseBackend(size);
+  return pool.chooseBackend(size, { strategy: pool.strategy, excludedBackendIds: [...excluded] });
+}
+
+async function nextPersistentCursor(db, userId, modulus) {
+  const rows = await db`
+    INSERT INTO user_settings (id, user_id, key, value, updated_at)
+    VALUES (${crypto.randomUUID()}, ${userId}, 'allocation_rr_cursor', '0', NOW())
+    ON CONFLICT (user_id, key) DO UPDATE
+    SET value = ((CAST(user_settings.value AS BIGINT) + 1) % ${modulus})::text,
+        updated_at = NOW()
+    RETURNING value
+  `;
+  return Number.parseInt(rows[0]?.value || '0', 10);
 }
 
 export async function reserveStorage(env, { userId, accountId, bytes, uploadId, ttlSeconds = 3600 }) {
