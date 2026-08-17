@@ -11,6 +11,7 @@ import {
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
 import { allocationRoutes } from './routes/allocation.js';
+import { copyRoutes } from './routes/copy.js';
 import { filesRoutes } from './routes/files.js';
 import { googleRoutes } from './routes/google.js';
 import { moveRoutes } from './routes/move.js';
@@ -144,6 +145,7 @@ await accountsRoutes(app);
 await allocationRoutes(app);
 await storageRoutes(app);
 await googleRoutes(app);
+await copyRoutes(app);
 await moveRoutes(app);
 await filesRoutes(app);
 await uploadsRoutes(app);
