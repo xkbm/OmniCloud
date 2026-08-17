@@ -17,6 +17,7 @@ import { googleRoutes } from './routes/google.js';
 import { moveRoutes } from './routes/move.js';
 import { settingsRoutes } from './routes/settings.js';
 import { storageRoutes } from './routes/storage.js';
+import { transferRoutes } from './routes/transfers.js';
 import { uploadsRoutes } from './routes/uploads.js';
 import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
@@ -149,6 +150,7 @@ await googleRoutes(app);
 await copyRoutes(app);
 await moveRoutes(app);
 await filesRoutes(app);
+await transferRoutes(app);
 await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
