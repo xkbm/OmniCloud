@@ -50,6 +50,7 @@ jobs:
           node --check worker/src/routes/files.js
           node --check worker/src/routes/move.js
           node --check worker/src/routes/storage.js
+          node --check worker/src/routes/transfers.js
           node --check worker/src/routes/uploads.js
           node --check worker/src/routes/google.js
           node --check worker/src/providers/storage.js
@@ -84,9 +85,12 @@ jobs:
           grep -q "createTransferJob" worker/src/storage/jobs.js
           grep -q "claimNextTransferJob" worker/src/storage/jobs.js
           grep -q "hasQueuedTransferJobs" worker/src/storage/jobs.js
+          grep -q "runTransferJob" worker/src/storage/runner.js
           grep -q "TransferScheduler" worker/transferScheduler.js
           grep -q "TRANSFER_SCHEDULER" worker/wrangler.toml
-          grep -q "executorVersion" worker/src/storage/runner.js
+          grep -q "export class TransferScheduler" worker/transferScheduler.js
+          grep -q "export { TransferScheduler, UploadProgress }" worker/src/index.js
+          grep -q "transferRoutes" worker/src/index.js
 
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
