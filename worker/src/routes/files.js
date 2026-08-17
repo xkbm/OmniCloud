@@ -1,10 +1,9 @@
 import { requireUser, sql } from '../db.js';
-import { setStar, performRename, performDelete, performDownload, performCreateFolder, syncStorageAccount } from '../providers/storage.js';
+import { setStar, performRename, performMove, performDelete, performDownload, performCreateFolder, syncStorageAccount } from '../providers/storage.js';
+import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 
 function normalizePath(input = '/') {
-  if (!input || input === '/') return '/';
-  const clean = input.startsWith('/') ? input : `/${input}`;
-  return clean.endsWith('/') ? clean : `${clean}/`;
+  return normalizeVirtualPath(input);
 }
 
 function display(row) {
@@ -63,10 +62,7 @@ function inferMimeType(fileName, currentMime) {
 }
 
 function safeDownloadFilename(value) {
-  return String(value || 'download')
-    .replace(/[\r\n]/g, '')
-    .replaceAll('"', '')
-    .slice(0, 180) || 'download';
+  return sanitizeFileName(value, { fallback: 'download', maxLength: 180 }).replaceAll('"', '') || 'download';
 }
 
 export async function filesRoutes(app) {
@@ -83,10 +79,78 @@ export async function filesRoutes(app) {
 
   app.get('/api/files/:id', async(c)=>{try{const result=await getFile(c,c.req.param('id'));if(!result.row)return c.json({error:'File not found'},404);return c.json({data:display(result.row)});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
   app.patch('/api/files/:id/star', async(c)=>{try{const result=await getFile(c,c.req.param('id'));await assertActive(result.row);const isStarred=Boolean((await c.req.json()).is_starred??true);const account=await getAccount(c,result.row.cloud_account_id);await setStar(c.env,account,result.row,isStarred);await sql(c.env)`UPDATE file_metadata SET is_starred=${isStarred},updated_at=NOW() WHERE id=${result.row.id} AND user_id=${result.user.id}`;return c.json({data:{success:true,is_starred:isStarred,provider_sync:true}});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
-  app.patch('/api/files/:id/rename', async(c)=>{try{const result=await getFile(c,c.req.param('id'));await assertActive(result.row);const name=String((await c.req.json()).name||'').trim();if(!name)return c.json({error:'New name is required'},400);if(name.length>255)return c.json({error:'New name is too long'},400);const account=await getAccount(c,result.row.cloud_account_id);await performRename(c.env,account,result.row,name);await sql(c.env)`UPDATE file_metadata SET file_name=${name},updated_at=NOW() WHERE id=${result.row.id} AND user_id=${result.user.id}`;return c.json({data:{success:true}});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
+  app.patch('/api/files/:id/rename', async(c)=>{try{const result=await getFile(c,c.req.param('id'));await assertActive(result.row);const rawName=String((await c.req.json()).name||'');const name=sanitizeFileName(rawName,{fallback:''});if(!name)return c.json({error:'New name is required'},400);const account=await getAccount(c,result.row.cloud_account_id);await performRename(c.env,account,result.row,name);await sql(c.env)`UPDATE file_metadata SET file_name=${name},updated_at=NOW() WHERE id=${result.row.id} AND user_id=${result.user.id}`;return c.json({data:{success:true}});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
+
+  app.post('/api/files/:id/move', async(c)=>{
+    try {
+      const source=await getFile(c,c.req.param('id'));
+      await assertActive(source.row);
+      const body=await c.req.json();
+      const destinationId=String(body.destination_folder_id||body.destinationFolderId||body.targetFolderId||'').trim();
+      if(!destinationId)return c.json({error:'Destination folder is required'},400);
+
+      const db=sql(c.env);
+      const destinationRows=await db`
+        SELECT fm.*, ca.provider, ca.email, ca.status AS account_status
+        FROM file_metadata fm
+        JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id
+        WHERE fm.user_id=${source.user.id} AND fm.id=${destinationId}
+        LIMIT 1
+      `;
+      const destination=destinationRows[0];
+      if(!destination)return c.json({error:'Destination folder not found'},404);
+      if(destination.account_status!=='active')return c.json({error:'Destination account is not active'},409);
+      if(!destination.is_folder)return c.json({error:'Destination must be a folder'},400);
+      if(destination.cloud_account_id!==source.row.cloud_account_id)return c.json({error:'Cross-account move is not supported'},409);
+      if(destination.id===source.row.id)return c.json({error:'A file or folder cannot be moved into itself'},400);
+
+      const destinationVirtualPath=normalizePath(`${destination.virtual_path||'/'}${destination.file_name}`);
+      if(source.row.is_folder){
+        const sourceFolderPrefix=normalizePath(`${source.row.virtual_path||'/'}${source.row.file_name}`);
+        if(destinationVirtualPath===sourceFolderPrefix || destinationVirtualPath.startsWith(sourceFolderPrefix)){
+          return c.json({error:'A folder cannot be moved into itself or one of its descendants'},400);
+        }
+      }
+
+      const account=await getAccount(c,source.row.cloud_account_id);
+      const result=await performMove(c.env,account,source.row,{remoteParentId:destination.remote_file_id,virtualPath:destinationVirtualPath});
+      const oldFolderPrefix=normalizePath(`${source.row.virtual_path||'/'}${source.row.file_name}`);
+
+      try {
+        if(source.row.is_folder){
+          await db`
+            UPDATE file_metadata
+            SET virtual_path = CASE
+              WHEN id=${source.row.id} THEN ${destinationVirtualPath}
+              ELSE ${destinationVirtualPath} || substring(virtual_path from ${oldFolderPrefix.length+1})
+            END,
+            remote_parent_id = CASE WHEN id=${source.row.id} THEN ${destination.remote_file_id||null} ELSE remote_parent_id END,
+            updated_at=NOW()
+            WHERE user_id=${source.user.id}
+              AND cloud_account_id=${source.row.cloud_account_id}
+              AND (id=${source.row.id} OR virtual_path LIKE ${oldFolderPrefix+'%'})
+          `;
+        } else {
+          await db`
+            UPDATE file_metadata
+            SET virtual_path=${destinationVirtualPath}, remote_parent_id=${destination.remote_file_id||null}, updated_at=NOW()
+            WHERE id=${source.row.id} AND user_id=${source.user.id} AND cloud_account_id=${source.row.cloud_account_id}
+          `;
+        }
+      } catch (dbError) {
+        try { await syncStorageAccount(c.env,source.user.id,account); } catch {}
+        throw dbError;
+      }
+
+      return c.json({data:{success:true,file:{...result,virtualPath:destinationVirtualPath}}});
+    } catch(error){
+      return c.json({error:error?.message||'Move failed'},error?.status||400);
+    }
+  });
+
   app.delete('/api/files/:id', async(c)=>{try{const result=await getFile(c,c.req.param('id'));await assertActive(result.row);const account=await getAccount(c,result.row.cloud_account_id);await performDelete(c.env,account,result.row);await sql(c.env)`DELETE FROM file_metadata WHERE id=${result.row.id} AND user_id=${result.user.id}`;return c.json({data:{success:true}});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
   app.post('/api/files/bulk/delete', async(c)=>{try{const user=await requireUser(c);const ids=[...new Set((await c.req.json()).ids||[])].filter(Boolean);if(!ids.length)return c.json({error:'At least one file id is required'},400);if(ids.length>100)return c.json({error:'Too many files in one request'},400);const db=sql(c.env);const rows=await db`SELECT fm.*,ca.provider,ca.email,ca.encrypted_credentials,ca.status AS account_status FROM file_metadata fm JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id WHERE fm.user_id=${user.id} AND fm.id=ANY(${ids})`;for(const row of rows){if(row.account_status!=='active')continue;const account={...row,id:row.cloud_account_id,user_id:user.id,email:row.email,provider:row.provider,encrypted_credentials:row.encrypted_credentials,status:row.account_status};await performDelete(c.env,account,row);}await db`DELETE FROM file_metadata WHERE user_id=${user.id} AND id=ANY(${ids})`;return c.json({data:{success:true,count:rows.length}});}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
-  app.post('/api/files/folders',async(c)=>{try{const user=await requireUser(c);const body=await c.req.json();const name=String(body.name||'').trim();if(!name)return c.json({error:'Folder name is required'},400);if(name.length>255)return c.json({error:'Folder name is too long'},400);const db=sql(c.env);const requestedId=body.cloud_account_id||body.cloudAccountId||null;const rows=requestedId?await db`SELECT * FROM cloud_accounts WHERE id=${requestedId} AND user_id=${user.id} AND status='active' LIMIT 1`:await db`SELECT * FROM cloud_accounts WHERE user_id=${user.id} AND status='active' ORDER BY used_space ASC LIMIT 1`;const account=rows[0];if(!account)return c.json({error:'No active storage account is connected'},409);const folder=await performCreateFolder(c.env,account,{name,virtualPath:body.virtual_path||body.virtualPath||'/',remoteParentId:body.remote_parent_id||body.remoteParentId});await db`INSERT INTO file_metadata(id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id) VALUES(${crypto.randomUUID()},${user.id},${normalizePath(body.virtual_path||body.virtualPath||'/')},${folder.fileName||name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${folder.remoteFileId},${folder.remoteParentId||null}) ON CONFLICT(cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,updated_at=NOW()`;return c.json({data:{success:true,file:folder}},201);}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
+  app.post('/api/files/folders',async(c)=>{try{const user=await requireUser(c);const body=await c.req.json();const name=sanitizeFileName(body.name,{fallback:''});if(!name)return c.json({error:'Folder name is required'},400);const db=sql(c.env);const requestedId=body.cloud_account_id||body.cloudAccountId||null;const rows=requestedId?await db`SELECT * FROM cloud_accounts WHERE id=${requestedId} AND user_id=${user.id} AND status='active' LIMIT 1`:await db`SELECT * FROM cloud_accounts WHERE user_id=${user.id} AND status='active' ORDER BY used_space ASC LIMIT 1`;const account=rows[0];if(!account)return c.json({error:'No active storage account is connected'},409);const virtualPath=normalizePath(body.virtual_path||body.virtualPath||'/');const folder=await performCreateFolder(c.env,account,{name,virtualPath,remoteParentId:body.remote_parent_id||body.remoteParentId});await db`INSERT INTO file_metadata(id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id) VALUES(${crypto.randomUUID()},${user.id},${virtualPath},${folder.fileName||name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${folder.remoteFileId},${folder.remoteParentId||null}) ON CONFLICT(cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,updated_at=NOW()`;return c.json({data:{success:true,file:folder}},201);}catch(error){return c.json({error:error?.message||'Request failed'},error?.status||400);}});
 
   async function download(c,inline){
     const result=await getFile(c,c.req.param('id'));
