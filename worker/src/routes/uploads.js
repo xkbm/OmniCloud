@@ -1,5 +1,5 @@
 import { requireUser, sql } from '../db.js';
-import { performUpload } from '../providers/storage.js';
+import { performCreateFolder, performUpload } from '../providers/storage.js';
 import { resolveUploadFileName } from '../providers/duplicatePolicy.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.js';
@@ -39,23 +39,61 @@ async function sendProgress(c, uploadId, uploaded, total) {
   }).catch(() => {}));
 }
 
-async function resolveVirtualFolderAccount(db, userId, virtualPath) {
-  if (!virtualPath || virtualPath === '/') return null;
-  const normalized = normalizeVirtualPath(virtualPath);
-  const trimmed = normalized.replace(/^\/+|\/+$/g, '');
-  const parts = trimmed.split('/').filter(Boolean);
-  const fileName = parts.pop();
-  const parentPath = parts.length ? `/${parts.join('/')}/` : '/';
-  const rows = await db`
-    SELECT cloud_account_id
-    FROM file_metadata
-    WHERE user_id=${userId}
-      AND is_folder=TRUE
-      AND virtual_path=${parentPath}
-      AND file_name=${fileName}
-    LIMIT 1
-  `;
-  return rows[0]?.cloud_account_id || null;
+async function ensureRemoteParentPath(env, db, userId, account, virtualPath) {
+  const normalized = normalizeVirtualPath(virtualPath || '/');
+  if (normalized === '/') return null;
+
+  const parts = normalized.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  let parentPath = '/';
+  let parentRemoteId = null;
+
+  for (const name of parts) {
+    const existingRows = await db`
+      SELECT id, remote_file_id
+      FROM file_metadata
+      WHERE user_id=${userId}
+        AND cloud_account_id=${account.id}
+        AND is_folder=TRUE
+        AND virtual_path=${parentPath}
+        AND file_name=${name}
+      LIMIT 1
+    `;
+
+    if (existingRows[0]?.remote_file_id) {
+      parentRemoteId = String(existingRows[0].remote_file_id);
+    } else {
+      const folder = await performCreateFolder(env, account, {
+        name,
+        virtualPath: parentPath,
+        remoteParentId: parentRemoteId,
+      });
+      const remoteFileId = String(folder?.remoteFileId || folder?.id || '');
+      if (!remoteFileId) {
+        throw Object.assign(new Error('Storage provider did not return a folder identifier'), {
+          code: 'REMOTE_FOLDER_CREATE_FAILED',
+          status: 502,
+        });
+      }
+
+      await db`
+        INSERT INTO file_metadata
+          (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id)
+        VALUES
+          (${crypto.randomUUID()},${userId},${parentPath},${folder.fileName || name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${remoteFileId},${folder.remoteParentId || parentRemoteId || null})
+        ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+          file_name=EXCLUDED.file_name,
+          virtual_path=EXCLUDED.virtual_path,
+          remote_parent_id=EXCLUDED.remote_parent_id,
+          updated_at=NOW()
+      `;
+
+      parentRemoteId = remoteFileId;
+    }
+
+    parentPath = normalizeVirtualPath(`${parentPath}${name}`);
+  }
+
+  return parentRemoteId;
 }
 
 export async function uploadsRoutes(app) {
@@ -70,7 +108,6 @@ export async function uploadsRoutes(app) {
       const size = Number(body.size || 0);
       const mimeInput = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
       const virtualPath = normalizeVirtualPath(body.virtualPath || body.virtual_path || '/');
-      const requestedRemoteParentId = body.remoteParentId || body.remote_parent_id || null;
       const duplicatePolicy = normalizeDuplicatePolicy(body.duplicatePolicy || body.duplicate_policy);
       const maxFileSize = getMaxFileSize(c.env);
 
@@ -92,8 +129,7 @@ export async function uploadsRoutes(app) {
       const account = accounts[0] || null;
       if (!account) return c.json({ error: 'Selected storage backend is no longer active', code: 'STORAGE_BACKEND_UNAVAILABLE' }, 409);
 
-      const folderAccountId = await resolveVirtualFolderAccount(db, user.id, virtualPath);
-      const remoteParentId = folderAccountId === account.id ? requestedRemoteParentId : null;
+      const remoteParentId = await ensureRemoteParentPath(c.env, db, user.id, account, virtualPath);
       const resolved = await resolveUploadFileName(c.env, account, { fileName, virtualPath, remoteParentId, duplicatePolicy });
       const id = crypto.randomUUID();
 
