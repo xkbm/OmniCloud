@@ -1,6 +1,7 @@
 import { requireUser, sql } from '../db.js';
-import { performMove, performDownload, performUpload, performDelete } from '../providers/storage.js';
+import { performMove } from '../providers/storage.js';
 import { transferFile as transferCrossBackend } from '../storage/transfer.js';
+import { getProviderCapabilities } from '../storage/capabilities.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
 
 function normalizePath(input = '/') {
@@ -118,6 +119,14 @@ export async function moveRoutes(app) {
       }
 
       const crossAccount = Boolean(destination && destination.cloud_account_id !== source.cloud_account_id);
+      const nativeMoveSupported = getProviderCapabilities(source.provider).move;
+      const transferFallback = !crossAccount && !nativeMoveSupported;
+      const transferOperation = crossAccount || transferFallback;
+      const transferDestination = destination || source;
+
+      if (transferFallback && source.is_folder) {
+        return c.json({ error: 'Moving folders on this storage backend requires recursive transfer and is not available yet', code: 'FOLDER_TRANSFER_UNSUPPORTED' }, 409);
+      }
 
       sagaId = await startSaga(c.env, {
         userId: user.id,
@@ -130,20 +139,21 @@ export async function moveRoutes(app) {
           sourceFileName: source.file_name,
           sourceMimeType: source.mime_type || null,
           sourceSize: Number(source.size || 0),
-          destinationAccountId: destination?.cloud_account_id || source.cloud_account_id,
+          destinationAccountId: transferDestination.cloud_account_id,
           destinationFolderId: destination?.id || null,
           destinationRemoteParentId: destinationParentId,
           destinationPath,
           crossAccount,
+          transferFallback,
         },
       });
 
-      if (crossAccount) {
+      if (transferOperation) {
         const result = await transferCrossBackend({
           env: c.env,
           userId: user.id,
           source,
-          destination,
+          destination: transferDestination,
           destinationPath,
           destinationParentId,
           onRemoteSuccess: async (remote) => {
@@ -157,7 +167,7 @@ export async function moveRoutes(app) {
           INSERT INTO file_metadata
             (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
           VALUES
-            (${newId},${user.id},${destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+            (${newId},${user.id},${destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${transferDestination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
           ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
             virtual_path=EXCLUDED.virtual_path,
             file_name=EXCLUDED.file_name,
@@ -171,7 +181,7 @@ export async function moveRoutes(app) {
         `;
         await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${user.id}`;
         await completeSaga(c.env, sagaId);
-        return c.json({ data: { success: true, transferred: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: destination.cloud_account_id } } });
+        return c.json({ data: { success: true, transferred: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: transferDestination.cloud_account_id } } });
       }
 
       const account = accountFromRow(source, user.id);
