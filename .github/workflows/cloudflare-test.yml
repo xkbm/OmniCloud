@@ -45,6 +45,7 @@ jobs:
           node --check worker/src/storage/service.js
           node --check worker/src/storage/streams.js
           node --check worker/src/storage/transfer.js
+          node --check worker/src/storage/virtualFolders.js
           node --check worker/src/routes/accounts.js
           node --check worker/src/routes/backgroundMove.js
           node --check worker/src/routes/copy.js
@@ -72,6 +73,15 @@ jobs:
           grep -q "storage_reservations" worker/migrations/2026-08-17-storage-reservations.sql
           grep -q "reserveStorage" worker/src/routes/uploads.js
           grep -q "releaseStorageReservation" worker/src/routes/uploads.js
+
+      - name: Verify virtual folder namespace contract
+        run: |
+          grep -q "CREATE TABLE IF NOT EXISTS virtual_folders" worker/schema.sql
+          grep -q "CREATE TABLE IF NOT EXISTS virtual_folder_materializations" worker/schema.sql
+          grep -q "CREATE TABLE IF NOT EXISTS virtual_folders" worker/migrations/2026-08-17-virtual-folders.sql
+          grep -q "virtual_folder_materializations" worker/migrations/2026-08-17-virtual-folders.sql
+          grep -q "ensureVirtualFolder" worker/src/storage/virtualFolders.js
+          grep -q "upsertVirtualFolderMaterialization" worker/src/storage/virtualFolders.js
 
       - name: Verify unified copy contract
         run: |
