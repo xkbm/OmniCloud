@@ -6,10 +6,9 @@ import { guessMimeType } from '../utils/mime.js';
 import { decryptJson } from '../utils/crypto.js';
 const FOLDER_MARKER='/';
 function normalizeVirtualPath(input='/'){if(!input||input==='/')return '/';const prefixed=input.startsWith('/')?input:`/${input}`;return prefixed.endsWith('/')?prefixed:`${prefixed}/`;}
-function toKey(virtualPath='/',name=''){return `${normalizeVirtualPath(virtualPath).replace(/^\/+ /,'')}${name}`.replace(/^\/+/, '');}
+function toKey(virtualPath='/',name=''){return `${normalizeVirtualPath(virtualPath).replace(/^\/+/, '')}${name}`;}
 function keyToVirtualPath(key=''){const trimmed=key.replace(/\/+$/,'');const lastSlash=trimmed.lastIndexOf('/');if(lastSlash===-1)return '/';return `/${trimmed.slice(0,lastSlash)}/`;}
 function keyToName(key=''){const trimmed=key.replace(/\/+$/,'');const lastSlash=trimmed.lastIndexOf('/');return lastSlash===-1?trimmed:trimmed.slice(lastSlash+1);}
-
 export class S3Adapter extends BaseCloudAdapter {
  constructor(account){super(account);this.clientCache=null;this.bucketCache=null;}
  readCredentials(){const credentials=decryptJson(this.account.encrypted_credentials);if(!credentials.accessKeyId||!credentials.secretAccessKey||!credentials.bucket)throw new Error('S3 account credentials are incomplete (accessKeyId, secretAccessKey, bucket required)');return credentials;}
