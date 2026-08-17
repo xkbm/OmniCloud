@@ -7,7 +7,7 @@ import {
   getVirtualFolder,
   upsertVirtualFolderMaterialization,
 } from '../storage/virtualFolders.js';
-import { performCreateFolder } from '../providers/storage.js';
+import { performCreateFolder, performDelete } from '../providers/storage.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
 
 const MAX_VIRTUAL_COPY_NODES = 500;
@@ -138,6 +138,7 @@ async function loadVirtualCopySource(db, userId, sourceId) {
 export async function copyRoutes(app) {
   app.post('/api/files/:id/copy', async (c) => {
     let sagaId = null;
+    let virtualCopyContext = null;
     try {
       const user = await requireUser(c);
       const db = sql(c.env);
@@ -199,22 +200,18 @@ export async function copyRoutes(app) {
         `)[0];
         if (!destinationAccount) return c.json({ error: 'Destination storage account is no longer active', code: 'DESTINATION_ACCOUNT_INACTIVE' }, 409);
 
-        const destinationParent = await ensurePhysicalFolderPath(db, c.env, user.id, destinationAccount, destinationPath);
-        const destinationRootFolder = await performCreateFolder(c.env, destinationAccount, {
-          name: source.name,
-          virtualPath: destinationPath,
-          remoteParentId: destinationParent.remoteFileId,
-        });
-        if (!destinationRootFolder.remoteFileId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
-
         const destinationVirtualFolder = await ensureVirtualFolder(c.env, user.id, destinationRootPath);
-        const destinationRootMaterialization = await upsertVirtualFolderMaterialization(c.env, {
+        const destinationParent = await ensurePhysicalFolderPath(db, c.env, user.id, destinationAccount, destinationPath);
+        virtualCopyContext = {
           userId: user.id,
-          virtualFolderId: destinationVirtualFolder.id,
-          cloudAccountId: destinationAccount.id,
-          remoteFileId: destinationRootFolder.remoteFileId,
-          remoteParentId: destinationRootFolder.remoteParentId || destinationParent.remoteFileId || null,
-        });
+          db,
+          sourceVirtualFolderId: source.id,
+          destinationVirtualFolderId: destinationVirtualFolder.id,
+          destinationVirtualRootPath: destinationRootPath,
+          destinationAccount,
+          createdRootRemoteId: null,
+          rootCreated: false,
+        };
 
         sagaId = await startSaga(c.env, {
           userId: user.id,
@@ -229,6 +226,28 @@ export async function copyRoutes(app) {
             destinationVirtualRootPath: destinationRootPath,
             destinationAccountId: destinationAccount.id,
           },
+        });
+
+        const destinationRootFolder = await performCreateFolder(c.env, destinationAccount, {
+          name: source.name,
+          virtualPath: destinationPath,
+          remoteParentId: destinationParent.remoteFileId,
+        });
+        if (!destinationRootFolder.remoteFileId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
+        virtualCopyContext.rootCreated = true;
+        virtualCopyContext.createdRootRemoteId = destinationRootFolder.remoteFileId;
+
+        const destinationRootMaterialization = await upsertVirtualFolderMaterialization(c.env, {
+          userId: user.id,
+          virtualFolderId: destinationVirtualFolder.id,
+          cloudAccountId: destinationAccount.id,
+          remoteFileId: destinationRootFolder.remoteFileId,
+          remoteParentId: destinationRootFolder.remoteParentId || destinationParent.remoteFileId || null,
+        });
+
+        await updateSaga(c.env, sagaId, 'pending_remote', {
+          destinationRootRemoteId: destinationRootMaterialization.remote_file_id,
+          destinationRootParentId: destinationRootMaterialization.remote_parent_id,
         });
 
         const result = await copyFolder({
@@ -276,6 +295,7 @@ export async function copyRoutes(app) {
         }
 
         await completeSaga(c.env, sagaId);
+        virtualCopyContext = null;
         return c.json({
           data: {
             success: true,
@@ -360,7 +380,30 @@ export async function copyRoutes(app) {
       await completeSaga(c.env, sagaId);
       return c.json({ data: { success: true, copied: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: destinationAccount.cloud_account_id } } }, 201);
     } catch (error) {
-      if (sagaId) { try { await failSaga(c.env, sagaId, error, true); } catch (sagaError) { console.error('[copy] saga update failed:', sagaError); } }
+      if (virtualCopyContext?.rootCreated && virtualCopyContext.createdRootRemoteId && virtualCopyContext.destinationAccount) {
+        try {
+          await performDelete(c.env, virtualCopyContext.destinationAccount, {
+            id: virtualCopyContext.createdRootRemoteId,
+            is_folder: true,
+            file_name: virtualCopyContext.destinationVirtualRootPath.split('/').filter(Boolean).at(-1) || 'folder',
+            remote_file_id: virtualCopyContext.createdRootRemoteId,
+            cloud_account_id: virtualCopyContext.destinationAccount.id,
+          });
+        } catch (cleanupError) {
+          console.error('[copy] pre-success root cleanup failed:', cleanupError);
+        }
+      }
+      if (virtualCopyContext?.destinationVirtualFolderId) {
+        try {
+          await db`DELETE FROM file_metadata WHERE user_id=${user.id} AND cloud_account_id=${virtualCopyContext.destinationAccount?.id || null} AND virtual_path LIKE ${`${virtualCopyContext.destinationVirtualRootPath}%`}`;
+          await db`DELETE FROM virtual_folders WHERE user_id=${user.id} AND (id=${virtualCopyContext.destinationVirtualFolderId} OR path=${virtualCopyContext.destinationVirtualRootPath} OR left(path,char_length(${`${virtualCopyContext.destinationVirtualRootPath}`}))=${`${virtualCopyContext.destinationVirtualRootPath}`})`;
+        } catch (cleanupDbError) {
+          console.error('[copy] pre-success namespace cleanup failed:', cleanupDbError);
+        }
+      }
+      if (sagaId) {
+        try { await failSaga(c.env, sagaId, error, Boolean(virtualCopyContext?.rootCreated)); } catch (sagaError) { console.error('[copy] saga update failed:', sagaError); }
+      }
       console.error('[copy] request failed:', error);
       const status = [400,404,409,413,502].includes(Number(error?.status)) ? Number(error.status) : 500;
       return c.json({ error: 'Copy failed', code: error?.code || 'COPY_FAILED' }, status);
