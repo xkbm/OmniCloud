@@ -43,6 +43,7 @@ jobs:
           node --check worker/src/storage/streams.js
           node --check worker/src/storage/transfer.js
           node --check worker/src/routes/accounts.js
+          node --check worker/src/routes/copy.js
           node --check worker/src/routes/files.js
           node --check worker/src/routes/move.js
           node --check worker/src/routes/storage.js
@@ -66,6 +67,12 @@ jobs:
           grep -q "storage_reservations" worker/migrations/2026-08-17-storage-reservations.sql
           grep -q "reserveStorage" worker/src/routes/uploads.js
           grep -q "releaseStorageReservation" worker/src/routes/uploads.js
+
+      - name: Verify unified copy contract
+        run: |
+          grep -q "POST /api/files/:id/copy" worker/src/routes/copy.js || grep -q "api/files/:id/copy" worker/src/routes/copy.js
+          grep -q "copyFile" worker/src/routes/copy.js
+          grep -q "copyRoutes" worker/src/index.js
 
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
