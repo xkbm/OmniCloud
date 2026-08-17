@@ -42,6 +42,10 @@ jobs:
           node --check worker/src/routes/google.js
           node --check worker/src/providers/storage.js
           node --check worker/src/providers/google.js
+          node --check worker/src/providers/googleReplace.js
+          node --check worker/src/providers/duplicatePolicy.js
+          node --check worker/src/utils/filePolicy.js
+          node --check worker/src/utils/sagas.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
       - name: Prepare legacy adapters
