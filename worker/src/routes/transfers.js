@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireUser } from '../db.js';
 import { getTransferJob, updateTransferJob } from '../storage/jobs.js';
+import { releaseStorageReservation } from '../storage/service.js';
 
 export async function transferRoutes(app) {
   const routes = new Hono();
@@ -33,9 +34,13 @@ export async function transferRoutes(app) {
     if (!['queued', 'paused'].includes(job.status)) {
       return c.json({ error: 'Transfer cannot be cancelled in its current state', code: 'TRANSFER_NOT_CANCELLABLE' }, 409);
     }
+
+    const reservationId = job.payload?.reservationId || null;
+    if (reservationId) await releaseStorageReservation(c.env, reservationId, user.id);
+
     const updated = await updateTransferJob(c.env, user.id, job.id, {
       status: 'cancelled',
-      payload: { cancelRequestedAt: new Date().toISOString() },
+      payload: { cancelRequestedAt: new Date().toISOString(), reservationReleased: Boolean(reservationId) },
     });
     return c.json({ data: updated });
   });
