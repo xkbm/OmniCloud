@@ -25,6 +25,19 @@ function toIsoDate(value) {
 	return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function multipartField(boundary, name, value) {
+	return Buffer.from(
+		`--${boundary}\r\n` +
+		`Content-Disposition: form-data; name="${name}"\r\n\r\n` +
+		`${value}\r\n`,
+		'utf8',
+	);
+}
+
+function escapeMultipartFilename(value) {
+	return String(value || 'upload').replace(/["\\\r\n]/g, '_');
+}
+
 export class PCloudAdapter extends BaseCloudAdapter {
 	constructor(account) {
 		super(account);
@@ -154,49 +167,70 @@ export class PCloudAdapter extends BaseCloudAdapter {
 
 	async uploadStream({ stream, size, fileName, mimeType, virtualPath = '/', onProgress }) {
 		const { host, auth } = await this.getSession();
-		await this.ensureFolder(virtualPath);
+		const folderId = await this.ensureFolder(virtualPath);
+		const safeName = escapeMultipartFilename(fileName);
+		const contentType = mimeType || 'application/octet-stream';
+		const boundary = `----OmniCloud-${crypto.randomUUID()}`;
+		const fields = [
+			multipartField(boundary, 'auth', auth),
+			multipartField(boundary, 'folderid', folderId),
+			multipartField(boundary, 'filename', safeName),
+			multipartField(boundary, 'nopartial', '1'),
+		];
+		const fileHeader = Buffer.from(
+			`--${boundary}\r\n` +
+			`Content-Disposition: form-data; name="file"; filename="${safeName}"\r\n` +
+			`Content-Type: ${contentType}\r\n\r\n`,
+			'utf8',
+		);
+		const footer = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+		const prefixLength = fields.reduce((sum, field) => sum + field.byteLength, 0);
+		const contentLength = Number.isFinite(Number(size)) && Number(size) >= 0
+			? prefixLength + fileHeader.byteLength + Number(size) + footer.byteLength
+			: null;
 
-		const normalized = normalizeVirtualPath(virtualPath);
-		const folderPath = normalized === '/' ? '/' : normalized.replace(/\/+$/, '');
-
-		const chunks = [];
 		let received = 0;
-		for await (const chunk of stream) {
-			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-			chunks.push(buffer);
-			received += buffer.length;
-			if (typeof onProgress === 'function') {
-				onProgress(received);
-			}
-		}
-		const fileBuffer = Buffer.concat(chunks, received);
-		if (size && received !== size) {
-			console.warn(`pCloud upload size mismatch: expected ${size}, received ${received}`);
-		}
+		const multipartStream = Readable.from((async function* () {
+			for (const field of fields) yield field;
+			yield fileHeader;
 
-		const form = new FormData();
-		form.set('auth', auth);
-		form.set('path', folderPath);
-		form.set('filename', fileName);
-		form.set('nopartial', '1');
-		form.append('file', new Blob([fileBuffer], { type: mimeType || 'application/octet-stream' }), fileName);
+			for await (const chunk of stream) {
+				const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+				received += buffer.byteLength;
+				onProgress?.(received);
+				yield buffer;
+			}
+
+			yield footer;
+		})());
+
+		const headers = {
+			'Content-Type': `multipart/form-data; boundary=${boundary}`,
+			...(contentLength !== null ? { 'Content-Length': String(contentLength) } : {}),
+		};
 
 		const response = await fetch(`https://${host}/uploadfile`, {
 			method: 'POST',
-			body: form,
+			headers,
+			body: multipartStream,
+			duplex: 'half',
 		});
 
 		const payload = await response.json().catch(() => null);
-		if (!payload || payload.result !== 0) {
+		if (!response.ok || !payload || payload.result !== 0) {
 			const message = payload?.error || `pCloud upload failed (HTTP ${response.status})`;
 			throw new Error(message);
+		}
+
+		if (size !== undefined && size !== null && Number(size) !== received) {
+			throw new Error(`pCloud upload size mismatch: expected ${size}, received ${received}`);
 		}
 
 		const meta = (payload.metadata || [])[0] || {};
 		return {
 			remoteFileId: meta.fileid ? `f${meta.fileid}` : undefined,
-			remoteParentId: normalized,
-			size: Number(meta.size || size || 0),
+			remoteParentId: normalizeVirtualPath(virtualPath),
+			size: Number(meta.size || size || received || 0),
 			fileName: meta.name || fileName,
 			mimeType,
 		};
