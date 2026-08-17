@@ -142,8 +142,8 @@ await settingsRoutes(app);
 await accountsRoutes(app);
 await allocationRoutes(app);
 await googleRoutes(app);
-await filesRoutes(app);
 await moveRoutes(app);
+await filesRoutes(app);
 await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
