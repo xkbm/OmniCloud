@@ -24,6 +24,7 @@ import { virtualFilesRoutes } from './routes/virtualFiles.js';
 import { virtualFolderRoutes } from './routes/virtualFolders.js';
 import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
+import { probeAllStorageAccounts } from './storage/service.js';
 import { sql } from './db.js';
 
 const app = new Hono();
@@ -160,6 +161,12 @@ await transferRoutes(app);
 await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
+
+export async function scheduled(_event, env, ctx) {
+  ctx.waitUntil(probeAllStorageAccounts(env).catch((error) => {
+    console.error('[storage-health] scheduled probe failed:', error);
+  }));
+}
 
 export { TransferScheduler, UploadProgress };
 export default app;
