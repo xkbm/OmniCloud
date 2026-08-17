@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { IconStarFilled } from '@tabler/icons-vue';
 import TruncateMarquee from './TruncateMarquee.vue';
@@ -17,6 +17,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['select', 'open', 'contextmenu']);
+const isDragging = ref(false);
+const isDropTarget = ref(false);
+const dragMime = 'application/x-omnicloud-file';
+const dragSelectedMime = 'application/x-omnicloud-selected';
 
 const displayName = computed(() => {
 	if (props.nameField === 'display_name') {
@@ -24,6 +28,9 @@ const displayName = computed(() => {
 	}
 	return props.item[props.nameField] || '';
 });
+
+const canDrag = computed(() => props.item.provider === 'google_drive');
+const isInternalDrag = (event) => Boolean(event.dataTransfer?.types?.includes(dragMime));
 
 function handleClick(event) {
 	emit('select', event);
@@ -36,14 +43,84 @@ function handleDblClick(event) {
 function handleContextMenu(event) {
 	emit('contextmenu', event);
 }
+
+function handleDragStart(event) {
+	if (!canDrag.value) return;
+	isDragging.value = true;
+	event.dataTransfer.effectAllowed = 'move';
+	event.dataTransfer.setData(dragMime, props.item.id);
+	event.dataTransfer.setData(dragSelectedMime, String(props.selected));
+	event.dataTransfer.setData('text/plain', props.item.file_name || '');
+}
+
+function handleDragEnd() {
+	isDragging.value = false;
+	isDropTarget.value = false;
+}
+
+function handleDragEnter(event) {
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	event.preventDefault();
+	isDropTarget.value = true;
+}
+
+function handleDragOver(event) {
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	event.preventDefault();
+	isDropTarget.value = true;
+}
+
+function handleDragLeave(event) {
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!event.currentTarget.contains(event.relatedTarget)) {
+		isDropTarget.value = false;
+	}
+}
+
+function handleDrop(event) {
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	event.preventDefault();
+	isDropTarget.value = false;
+	window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
+		detail: {
+			sourceFileId: event.dataTransfer.getData(dragMime),
+			sourceWasSelected: event.dataTransfer.getData(dragSelectedMime) === 'true',
+			targetFolder: props.item,
+		},
+	}));
+}
 </script>
 
 <template>
-	<div class="group select-none rounded-[22px] border p-4 transition hover:-translate-y-0.5 hover:border-[#d2e3fc] hover:shadow-[0_10px_30px_rgba(32,33,36,0.08)] dark:hover:border-slate-500" :class="selected ? 'border-[#1a73e8] bg-gradient-to-br from-[#e8f0fe] to-[#f8fbff] shadow-[0_14px_34px_rgba(26,115,232,0.14)] dark:border-sky-400 dark:from-sky-500/15 dark:to-slate-800' : highlighted ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-[#fffdf5] shadow-[0_14px_34px_rgba(245,158,11,0.14)] dark:border-amber-300 dark:from-amber-400/15 dark:to-slate-800' : 'border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800'" :data-file-id="item.id" @click="handleClick" @dblclick="handleDblClick" @contextmenu="handleContextMenu">
+	<div
+		class="group select-none rounded-[22px] border p-4 transition hover:-translate-y-0.5 hover:border-[#d2e3fc] hover:shadow-[0_10px_30px_rgba(32,33,36,0.08)] dark:hover:border-slate-500"
+		:class="selected ? 'border-[#1a73e8] bg-gradient-to-br from-[#e8f0fe] to-[#f8fbff] shadow-[0_14px_34px_rgba(26,115,232,0.14)] dark:border-sky-400 dark:from-sky-500/15 dark:to-slate-800' : isDropTarget ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-[#f7fbff] shadow-[0_14px_34px_rgba(14,165,233,0.14)] ring-2 ring-sky-400/50 dark:border-sky-300 dark:from-sky-400/15 dark:to-slate-800' : highlighted ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-[#fffdf5] shadow-[0_14px_34px_rgba(245,158,11,0.14)] dark:border-amber-300 dark:from-amber-400/15 dark:to-slate-800' : 'border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800'"
+		:data-file-id="item.id"
+		:draggable="canDrag"
+		:class="isDragging ? 'opacity-45' : ''"
+		@dragstart="handleDragStart"
+		@dragend="handleDragEnd"
+		@dragenter="handleDragEnter"
+		@dragover="handleDragOver"
+		@dragleave="handleDragLeave"
+		@drop="handleDrop"
+		@click="handleClick"
+		@dblclick="handleDblClick"
+		@contextmenu="handleContextMenu"
+	>
 		<button type="button" class="flex w-full flex-col items-start gap-4 text-left">
 			<div class="flex w-full items-start justify-between gap-3">
-				<div class="grid size-12 place-items-center rounded-2xl transition" :class="selected ? 'bg-[#d3e3fd] text-[#1a73e8] shadow-inner dark:bg-sky-500/20 dark:text-sky-300' : highlighted ? 'bg-amber-100 text-amber-500 shadow-inner dark:bg-amber-400/20 dark:text-amber-300' : 'bg-[#f1f3f4] text-[#5f6368] dark:bg-slate-700 dark:text-slate-300'">
-					<component :is="getFileIcon(item, selected || highlighted)" :size="22" :stroke="selected || highlighted ? 0 : 1.8" class="transition-transform duration-200 group-hover:scale-110" />
+				<div class="grid size-12 place-items-center rounded-2xl transition" :class="selected ? 'bg-[#d3e3fd] text-[#1a73e8] shadow-inner dark:bg-sky-500/20 dark:text-sky-300' : isDropTarget ? 'bg-sky-100 text-sky-500 shadow-inner dark:bg-sky-400/20 dark:text-sky-300' : highlighted ? 'bg-amber-100 text-amber-500 shadow-inner dark:bg-amber-400/20 dark:text-amber-300' : 'bg-[#f1f3f4] text-[#5f6368] dark:bg-slate-700 dark:text-slate-300'">
+					<component :is="getFileIcon(item, selected || highlighted || isDropTarget)" :size="22" :stroke="selected || highlighted || isDropTarget ? 0 : 1.8" class="transition-transform duration-200 group-hover:scale-110" />
 				</div>
 				<IconStarFilled v-if="showStar && item.is_starred && item.capabilities?.starred" :size="16" :stroke="0" class="shrink-0 text-amber-400" />
 			</div>
