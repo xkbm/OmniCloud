@@ -39,7 +39,7 @@ export async function runTransferJob(env, job) {
   }
 
   const { source, destination } = await loadSingleFileTransfer(env, job);
-  const destinationPath = `${destination.virtual_path || '/'}${destination.file_name}/`.replace(/\/+/g, '/');
+  const destinationPath = `${destination.virtual_path || '/'}${destination.file_name}/`.replace(/\\+/g, '/');
   const destinationParentId = destination.remote_file_id || 'root';
   const copy = job.operation === 'copy';
   let sagaId = null;
@@ -72,11 +72,16 @@ export async function runTransferJob(env, job) {
       ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess })
       : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess });
 
+    const destinationRemoteId = result.destinationRemoteId || result.remoteFileId || result.id;
+    if (!destinationRemoteId) {
+      throw Object.assign(new Error('Transfer completed without a destination identifier'), { code: 'DESTINATION_ID_MISSING', status: 502 });
+    }
+
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'verifying',
       completedNodes: 0,
       bytesCompleted: 0,
-      payload: { remoteResult: result, sagaId },
+      payload: { remoteResult: result, destinationRemoteId, sagaId },
     });
 
     const db = sql(env);
@@ -85,7 +90,7 @@ export async function runTransferJob(env, job) {
       INSERT INTO file_metadata
         (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
       VALUES
-        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(destinationRemoteId)},${result.destinationParentId || destinationParentId || null},${result.createdTime || null},${result.modifiedTime || null})
       ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
         virtual_path=EXCLUDED.virtual_path,
         file_name=EXCLUDED.file_name,
@@ -104,7 +109,7 @@ export async function runTransferJob(env, job) {
       status: 'completed',
       completedNodes: 1,
       bytesCompleted: bytes,
-      payload: { destinationFileId: newId, remoteResult: result, sagaId },
+      payload: { destinationFileId: newId, destinationRemoteId, remoteResult: result, sagaId },
     });
     return { id: job.id, destinationFileId: newId, bytesCompleted: bytes };
   } catch (error) {
