@@ -89,7 +89,7 @@ function handleDrop(event) {
 		detail: {
 			sourceFileId: event.dataTransfer.getData(dragMime),
 			sourceWasSelected: props.selected,
-			sourceFile: null,
+			sourceFile: props.item.id === event.dataTransfer.getData(dragMime) ? props.item : null,
 			targetFolder: props.item,
 		},
 	}));
