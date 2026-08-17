@@ -38,6 +38,7 @@ jobs:
           node --check worker/src/uploadProgress.js
           node --check worker/src/storage/backend.js
           node --check worker/src/storage/capabilities.js
+          node --check worker/src/storage/jobs.js
           node --check worker/src/storage/pool.js
           node --check worker/src/storage/service.js
           node --check worker/src/storage/streams.js
@@ -73,6 +74,13 @@ jobs:
           grep -q "POST /api/files/:id/copy" worker/src/routes/copy.js || grep -q "api/files/:id/copy" worker/src/routes/copy.js
           grep -q "copyFile" worker/src/routes/copy.js
           grep -q "copyRoutes" worker/src/index.js
+
+      - name: Verify transfer job contract
+        run: |
+          grep -q "CREATE TABLE IF NOT EXISTS transfer_jobs" worker/migrations/2026-08-17-transfer-jobs.sql
+          grep -q "transfer_jobs" worker/migrations/2026-08-17-transfer-jobs.sql
+          grep -q "createTransferJob" worker/src/storage/jobs.js
+          grep -q "updateTransferJob" worker/src/storage/jobs.js
 
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
