@@ -103,6 +103,8 @@ jobs:
           grep -q "POST /api/files/:id/copy" worker/src/routes/copy.js || grep -q "api/files/:id/copy" worker/src/routes/copy.js
           grep -q "copyFile" worker/src/routes/copy.js
           grep -q "copyRoutes" worker/src/index.js
+          grep -q "existingRootRemoteId" worker/src/storage/transfer.js
+          grep -q "createRoot: !existingRootRemoteId" worker/src/storage/transfer.js
 
       - name: Verify transfer job contract
         run: |
