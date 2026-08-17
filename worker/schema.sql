@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   size BIGINT NOT NULL DEFAULT 0,
   virtual_path TEXT NOT NULL DEFAULT '/',
   remote_parent_id TEXT,
+  duplicate_policy TEXT NOT NULL DEFAULT 'rename',
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -113,6 +114,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_user_key
   ON user_settings(user_id, key);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_user_id
   ON upload_sessions(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_upload_sessions_policy
+  ON upload_sessions(duplicate_policy, status);
 CREATE INDEX IF NOT EXISTS idx_operation_sagas_status
   ON operation_sagas(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_sagas_user
