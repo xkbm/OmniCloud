@@ -122,11 +122,7 @@ async function loadVirtualCopySource(db, userId, sourceId) {
     `,
   ]);
 
-  const nodes = [
-    ...folderRows.map((row) => folderNode(row, source.cloud_account_id)),
-    ...fileRows,
-  ];
-
+  const nodes = [...folderRows.map((row) => folderNode(row, source.cloud_account_id)), ...fileRows];
   if (nodes.length > MAX_VIRTUAL_COPY_NODES) {
     throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_VIRTUAL_COPY_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
   }
@@ -204,13 +200,13 @@ export async function copyRoutes(app) {
         const destinationParent = await ensurePhysicalFolderPath(db, c.env, user.id, destinationAccount, destinationPath);
         virtualCopyContext = {
           userId: user.id,
-          db,
           sourceVirtualFolderId: source.id,
           destinationVirtualFolderId: destinationVirtualFolder.id,
           destinationVirtualRootPath: destinationRootPath,
           destinationAccount,
           createdRootRemoteId: null,
           rootCreated: false,
+          remoteSucceeded: false,
         };
 
         sagaId = await startSaga(c.env, {
@@ -259,7 +255,10 @@ export async function copyRoutes(app) {
           destinationParentId: destinationRootMaterialization.remote_parent_id || destinationParent.remoteFileId || null,
           nodes: loaded.nodes,
           existingRootRemoteId: destinationRootMaterialization.remote_file_id,
-          onRemoteSuccess: async (remote) => updateSaga(c.env, sagaId, 'remote_succeeded', remote),
+          onRemoteSuccess: async (remote) => {
+            virtualCopyContext.remoteSucceeded = true;
+            await updateSaga(c.env, sagaId, 'remote_succeeded', remote);
+          },
         });
 
         for (const node of result.nodes) {
@@ -380,7 +379,7 @@ export async function copyRoutes(app) {
       await completeSaga(c.env, sagaId);
       return c.json({ data: { success: true, copied: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: destinationAccount.cloud_account_id } } }, 201);
     } catch (error) {
-      if (virtualCopyContext?.rootCreated && virtualCopyContext.createdRootRemoteId && virtualCopyContext.destinationAccount) {
+      if (virtualCopyContext && !virtualCopyContext.remoteSucceeded && virtualCopyContext.rootCreated && virtualCopyContext.createdRootRemoteId) {
         try {
           await performDelete(c.env, virtualCopyContext.destinationAccount, {
             id: virtualCopyContext.createdRootRemoteId,
@@ -393,16 +392,16 @@ export async function copyRoutes(app) {
           console.error('[copy] pre-success root cleanup failed:', cleanupError);
         }
       }
-      if (virtualCopyContext?.destinationVirtualFolderId) {
+      if (virtualCopyContext && !virtualCopyContext.remoteSucceeded && virtualCopyContext.destinationVirtualFolderId) {
         try {
-          await db`DELETE FROM file_metadata WHERE user_id=${user.id} AND cloud_account_id=${virtualCopyContext.destinationAccount?.id || null} AND virtual_path LIKE ${`${virtualCopyContext.destinationVirtualRootPath}%`}`;
-          await db`DELETE FROM virtual_folders WHERE user_id=${user.id} AND (id=${virtualCopyContext.destinationVirtualFolderId} OR path=${virtualCopyContext.destinationVirtualRootPath} OR left(path,char_length(${`${virtualCopyContext.destinationVirtualRootPath}`}))=${`${virtualCopyContext.destinationVirtualRootPath}`})`;
+          await db`DELETE FROM file_metadata WHERE user_id=${user.id} AND cloud_account_id=${virtualCopyContext.destinationAccount.id} AND virtual_path LIKE ${`${virtualCopyContext.destinationVirtualRootPath}%`}`;
+          await db`DELETE FROM virtual_folders WHERE user_id=${user.id} AND (id=${virtualCopyContext.destinationVirtualFolderId} OR path=${virtualCopyContext.destinationVirtualRootPath} OR left(path,char_length(${virtualCopyContext.destinationVirtualRootPath}))=${virtualCopyContext.destinationVirtualRootPath})`;
         } catch (cleanupDbError) {
           console.error('[copy] pre-success namespace cleanup failed:', cleanupDbError);
         }
       }
       if (sagaId) {
-        try { await failSaga(c.env, sagaId, error, Boolean(virtualCopyContext?.rootCreated)); } catch (sagaError) { console.error('[copy] saga update failed:', sagaError); }
+        try { await failSaga(c.env, sagaId, error, Boolean(virtualCopyContext?.remoteSucceeded)); } catch (sagaError) { console.error('[copy] saga update failed:', sagaError); }
       }
       console.error('[copy] request failed:', error);
       const status = [400,404,409,413,502].includes(Number(error?.status)) ? Number(error.status) : 500;
