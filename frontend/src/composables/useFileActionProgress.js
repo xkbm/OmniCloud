@@ -6,6 +6,11 @@ export function useFileActionProgress() {
 
 	const isActionInProgress = computed(() => actionInProgress.value);
 
+	function setActionLabel(label) {
+		if (!actionInProgress.value) return;
+		actionLabel.value = String(label || '');
+	}
+
 	async function runWithProgress(label, task) {
 		actionInProgress.value = true;
 		actionLabel.value = label;
@@ -21,6 +26,7 @@ export function useFileActionProgress() {
 		actionInProgress,
 		actionLabel,
 		isActionInProgress,
+		setActionLabel,
 		runWithProgress,
 	};
 }
