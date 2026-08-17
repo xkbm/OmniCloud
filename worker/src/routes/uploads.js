@@ -6,6 +6,7 @@ import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.
 import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
+const SAFE_UPLOAD_ERROR_CODES = new Set(['MAX_FILE_SIZE_EXCEEDED', 'FILE_TYPE_NOT_ALLOWED', 'MIME_EXTENSION_MISMATCH']);
 
 function getMaxFileSize(env) {
   const configured = Number(env.MAX_FILE_SIZE);
@@ -15,6 +16,16 @@ function getMaxFileSize(env) {
 
 function sizeLimitResponse(c, maxFileSize) {
   return c.json({ error: 'File exceeds the configured maximum upload size', code: 'MAX_FILE_SIZE_EXCEEDED', max_file_size: maxFileSize }, 413);
+}
+
+function safeErrorResponse(c, error, fallback, code) {
+  if (error instanceof Response) return error;
+  console.error('[uploads] request failed:', error);
+  const safeCode = SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? error.code : code;
+  const safeMessage = SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? String(error?.message || fallback) : fallback;
+  const requestedStatus = Number(error?.status);
+  const status = [400,409,413].includes(requestedStatus) ? requestedStatus : 500;
+  return c.json({ error: safeMessage, code: safeCode }, status);
 }
 
 async function sendProgress(c, uploadId, uploaded, total) {
@@ -40,8 +51,8 @@ export async function uploadsRoutes(app) {
       const duplicatePolicy = normalizeDuplicatePolicy(body.duplicatePolicy || body.duplicate_policy);
       const maxFileSize = getMaxFileSize(c.env);
 
-      if (!fileName) return c.json({ error: 'File name is required' }, 400);
-      if (!Number.isSafeInteger(size) || size < 0) return c.json({ error: 'Invalid file size' }, 400);
+      if (!fileName) return c.json({ error: 'File name is required', code: 'FILE_NAME_REQUIRED' }, 400);
+      if (!Number.isSafeInteger(size) || size < 0) return c.json({ error: 'Invalid file size', code: 'INVALID_FILE_SIZE' }, 400);
       if (size > maxFileSize) return sizeLimitResponse(c, maxFileSize);
       const validation = validateFileType(fileName, mimeInput);
 
@@ -51,7 +62,7 @@ export async function uploadsRoutes(app) {
         ? await db`SELECT * FROM cloud_accounts WHERE id=${requested} AND user_id=${user.id} AND status='active' LIMIT 1`
         : await db`SELECT * FROM cloud_accounts WHERE user_id=${user.id} AND status='active' ORDER BY used_space ASC LIMIT 1`;
       const account = accounts[0];
-      if (!account) return c.json({ error: 'No active storage account is connected' }, 409);
+      if (!account) return c.json({ error: 'No active storage account is connected', code: 'NO_ACTIVE_ACCOUNT' }, 409);
 
       const resolved = await resolveUploadFileName(c.env, account, {
         fileName,
@@ -86,7 +97,7 @@ export async function uploadsRoutes(app) {
         },
       }, 201);
     } catch (error) {
-      return c.json({ error: error?.message || 'Unable to initiate upload', code: error?.code || null }, error?.status || 400);
+      return safeErrorResponse(c, error, 'Unable to initiate upload', 'UPLOAD_INIT_FAILED');
     }
   });
 
@@ -104,18 +115,18 @@ export async function uploadsRoutes(app) {
         LIMIT 1
       `;
       const session = rows[0];
-      if (!session) return c.json({ error: 'Upload session not found' }, 404);
-      if (session.status !== 'pending') return c.json({ error: `Upload session is ${session.status}` }, 409);
-      if (session.account_status !== 'active') return c.json({ error: 'Storage account is not active' }, 409);
-      if (!c.req.raw.body) return c.json({ error: 'Upload body is empty' }, 400);
+      if (!session) return c.json({ error: 'Upload session not found', code: 'UPLOAD_SESSION_NOT_FOUND' }, 404);
+      if (session.status !== 'pending') return c.json({ error: `Upload session is ${session.status}`, code: 'UPLOAD_SESSION_NOT_PENDING' }, 409);
+      if (session.account_status !== 'active') return c.json({ error: 'Storage account is not active', code: 'ACCOUNT_INACTIVE' }, 409);
+      if (!c.req.raw.body) return c.json({ error: 'Upload body is empty', code: 'EMPTY_UPLOAD_BODY' }, 400);
 
       const maxFileSize = getMaxFileSize(c.env);
       const expectedSize = Number(session.size);
       const contentLength = Number(c.req.header('Content-Length'));
-      if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) return c.json({ error: 'Upload session has an invalid size' }, 409);
+      if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) return c.json({ error: 'Upload session has an invalid size', code: 'INVALID_UPLOAD_SESSION' }, 409);
       if (expectedSize > maxFileSize) return sizeLimitResponse(c, maxFileSize);
       if (Number.isFinite(contentLength) && contentLength > maxFileSize) return sizeLimitResponse(c, maxFileSize);
-      if (Number.isFinite(contentLength) && contentLength !== expectedSize) return c.json({ error: 'Upload content length does not match declared file size' }, 400);
+      if (Number.isFinite(contentLength) && contentLength !== expectedSize) return c.json({ error: 'Upload content length does not match declared file size', code: 'UPLOAD_SIZE_MISMATCH' }, 400);
 
       sagaId = await startSaga(c.env, {
         userId: user.id,
@@ -137,7 +148,7 @@ export async function uploadsRoutes(app) {
               if (done) break;
               uploaded += value.byteLength;
               if (uploaded > maxFileSize || uploaded > expectedSize) {
-                controller.error(new Error('Uploaded content exceeds the configured maximum file size'));
+                controller.error(Object.assign(new Error('Uploaded content exceeds the configured maximum file size'), { code: 'MAX_FILE_SIZE_EXCEEDED' }));
                 return;
               }
               controller.enqueue(value);
@@ -147,7 +158,7 @@ export async function uploadsRoutes(app) {
               }
             }
             if (uploaded !== expectedSize) {
-              controller.error(new Error('Uploaded content size does not match declared file size'));
+              controller.error(Object.assign(new Error('Uploaded content size does not match declared file size'), { code: 'UPLOAD_SIZE_MISMATCH' }));
               return;
             }
             controller.close();
@@ -201,15 +212,19 @@ export async function uploadsRoutes(app) {
     } catch (error) {
       try {
         await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId}`;
-      } catch {}
+      } catch (stateError) {
+        console.error('[uploads] failed to update upload session state:', stateError);
+      }
       if (sagaId) {
         try {
           const message = String(error?.message || error || 'Upload failed');
           await failSaga(c.env, sagaId, error, message.includes('remote') || message.includes('Postgres') || message.includes('database'));
-        } catch {}
+        } catch (sagaError) {
+          console.error('[uploads] failed to update upload saga:', sagaError);
+        }
       }
       const status = error?.code === 'MAX_FILE_SIZE_EXCEEDED' ? 413 : (error?.status || 400);
-      return c.json({ error: error?.message || 'Upload failed', code: error?.code || null }, status);
+      return safeErrorResponse(c, error, 'Upload failed', 'UPLOAD_FAILED');
     }
   });
 }
