@@ -44,21 +44,111 @@ async function resolveDestination(db, userId, source, body) {
       LIMIT 1
     `;
     destination = rows[0] || null;
+
+    if (!destination) {
+      const virtualRows = await db`
+        SELECT
+          vf.id AS virtual_folder_id,
+          vf.path AS virtual_path,
+          vf.name AS file_name,
+          vfm.cloud_account_id,
+          vfm.remote_file_id,
+          vfm.remote_parent_id,
+          ca.provider,
+          ca.email,
+          ca.encrypted_credentials,
+          ca.status AS account_status,
+          ca.total_space,
+          ca.used_space
+        FROM virtual_folders vf
+        JOIN virtual_folder_materializations vfm
+          ON vfm.virtual_folder_id = vf.id
+         AND vfm.user_id = vf.user_id
+         AND vfm.status = 'active'
+        JOIN cloud_accounts ca
+          ON ca.id = vfm.cloud_account_id
+         AND ca.user_id = vf.user_id
+        WHERE vf.id = ${destinationId}
+          AND vf.user_id = ${userId}
+          AND ca.status = 'active'
+        ORDER BY CASE WHEN vfm.cloud_account_id = ${source.cloud_account_id} THEN 0 ELSE 1 END,
+                 ca.created_at ASC,
+                 ca.id ASC
+        LIMIT 1
+      `;
+      const virtualDestination = virtualRows[0];
+      if (virtualDestination) {
+        destination = {
+          ...virtualDestination,
+          id: virtualDestination.virtual_folder_id,
+          is_folder: true,
+          virtual_folder_id: virtualDestination.virtual_folder_id,
+        };
+      }
+    }
+
     if (!destination) throw Object.assign(new Error('Destination folder not found'), { status: 404, code: 'DESTINATION_NOT_FOUND' });
   } else if (requestedPath !== null) {
     destinationPath = normalizePath(requestedPath);
     if (destinationPath !== '/') {
-      const rows = await db`
-        SELECT fm.*, ca.provider, ca.email, ca.encrypted_credentials,
-          ca.status AS account_status, ca.total_space, ca.used_space
-        FROM file_metadata fm
-        JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
-        WHERE fm.user_id = ${userId}
-          AND fm.is_folder = TRUE
-          AND (fm.virtual_path || fm.file_name || '/') = ${destinationPath}
+      const virtualRows = await db`
+        SELECT
+          vf.id AS virtual_folder_id,
+          vf.path AS virtual_path,
+          vf.name AS file_name,
+          vfm.cloud_account_id,
+          vfm.remote_file_id,
+          vfm.remote_parent_id,
+          ca.provider,
+          ca.email,
+          ca.encrypted_credentials,
+          ca.status AS account_status,
+          ca.total_space,
+          ca.used_space
+        FROM virtual_folders vf
+        LEFT JOIN LATERAL (
+          SELECT vfm.*
+          FROM virtual_folder_materializations vfm
+          JOIN cloud_accounts ca2
+            ON ca2.id = vfm.cloud_account_id
+           AND ca2.user_id = vfm.user_id
+          WHERE vfm.virtual_folder_id = vf.id
+            AND vfm.user_id = vf.user_id
+            AND vfm.status = 'active'
+            AND ca2.status = 'active'
+          ORDER BY CASE WHEN vfm.cloud_account_id = ${source.cloud_account_id} THEN 0 ELSE 1 END,
+                   ca2.created_at ASC,
+                   ca2.id ASC
+          LIMIT 1
+        ) vfm ON TRUE
+        LEFT JOIN cloud_accounts ca
+          ON ca.id = vfm.cloud_account_id
+         AND ca.user_id = vf.user_id
+        WHERE vf.user_id = ${userId}
+          AND vf.path = ${destinationPath}
         LIMIT 1
       `;
-      destination = rows[0] || null;
+      const virtualDestination = virtualRows[0];
+      if (virtualDestination) {
+        destination = {
+          ...virtualDestination,
+          id: virtualDestination.virtual_folder_id,
+          is_folder: true,
+          virtual_folder_id: virtualDestination.virtual_folder_id,
+        };
+      } else {
+        const rows = await db`
+          SELECT fm.*, ca.provider, ca.email, ca.encrypted_credentials,
+            ca.status AS account_status, ca.total_space, ca.used_space
+          FROM file_metadata fm
+          JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+          WHERE fm.user_id = ${userId}
+            AND fm.is_folder = TRUE
+            AND (fm.virtual_path || fm.file_name || '/') = ${destinationPath}
+          LIMIT 1
+        `;
+        destination = rows[0] || null;
+      }
       if (!destination) throw Object.assign(new Error('Destination folder not found'), { status: 404, code: 'DESTINATION_NOT_FOUND' });
     }
   } else {
@@ -68,7 +158,7 @@ async function resolveDestination(db, userId, source, body) {
   if (destination) {
     if (!destination.is_folder) throw Object.assign(new Error('Destination must be a folder'), { status: 400, code: 'DESTINATION_NOT_FOLDER' });
     if (destination.account_status !== 'active') throw Object.assign(new Error('Destination account is not active'), { status: 409, code: 'DESTINATION_ACCOUNT_INACTIVE' });
-    destinationPath = normalizePath(`${destination.virtual_path || '/'}${destination.file_name}`);
+    destinationPath = normalizePath(destination.virtual_path || destinationPath || '/');
     if (destination.id === source.id) throw Object.assign(new Error('A file or folder cannot be moved into itself'), { status: 400, code: 'INVALID_MOVE_TARGET' });
   }
 
