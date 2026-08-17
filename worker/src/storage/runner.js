@@ -1,20 +1,7 @@
 import { sql } from '../db.js';
 import { copyFile, transferFile } from './transfer.js';
-import { createTransferJob, getTransferJob, updateTransferJob } from './jobs.js';
+import { updateTransferJob } from './jobs.js';
 import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
-
-function accountFields(row) {
-  return {
-    id: row.cloud_account_id,
-    user_id: row.user_id,
-    email: row.email,
-    provider: row.provider,
-    encrypted_credentials: row.encrypted_credentials,
-    status: row.account_status,
-    total_space: row.total_space,
-    used_space: row.used_space,
-  };
-}
 
 async function loadSingleFileTransfer(env, job) {
   const db = sql(env);
@@ -58,77 +45,81 @@ export async function runTransferJob(env, job) {
   let sagaId = null;
   let remoteSucceeded = false;
 
-  sagaId = await startSaga(env, {
-    userId: job.user_id,
-    accountId: source.cloud_account_id,
-    fileId: source.id,
-    operation: 'move',
-    payload: {
-      copy,
-      transferJobId: job.id,
-      sourceAccountId: source.cloud_account_id,
-      sourceRemoteId: source.remote_file_id,
-      destinationAccountId: destination.cloud_account_id,
-      destinationFolderId: destination.id,
-      destinationPath,
-      destinationParentId,
-    },
-  });
+  try {
+    sagaId = await startSaga(env, {
+      userId: job.user_id,
+      accountId: source.cloud_account_id,
+      fileId: source.id,
+      operation: 'move',
+      payload: {
+        copy,
+        transferJobId: job.id,
+        sourceAccountId: source.cloud_account_id,
+        sourceRemoteId: source.remote_file_id,
+        destinationAccountId: destination.cloud_account_id,
+        destinationFolderId: destination.id,
+        destinationPath,
+        destinationParentId,
+      },
+    });
 
-  const onRemoteSuccess = async (remote) => {
-    remoteSucceeded = true;
-    await updateSaga(env, sagaId, 'remote_succeeded', remote);
-  };
+    const onRemoteSuccess = async (remote) => {
+      remoteSucceeded = true;
+      await updateSaga(env, sagaId, 'remote_succeeded', remote);
+    };
 
-  const result = copy
-    ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess })
-    : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess });
+    const result = copy
+      ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess })
+      : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess });
 
-  await updateTransferJob(env, job.user_id, job.id, {
-    status: 'verifying',
-    completedNodes: 0,
-    bytesCompleted: 0,
-    payload: { remoteResult: result, sagaId },
-  });
+    await updateTransferJob(env, job.user_id, job.id, {
+      status: 'verifying',
+      completedNodes: 0,
+      bytesCompleted: 0,
+      payload: { remoteResult: result, sagaId },
+    });
 
-  const db = sql(env);
-  const newId = crypto.randomUUID();
-  await db`
-    INSERT INTO file_metadata
-      (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
-    VALUES
-      (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
-    ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
-      virtual_path=EXCLUDED.virtual_path,
-      file_name=EXCLUDED.file_name,
-      is_starred=EXCLUDED.is_starred,
-      size=EXCLUDED.size,
-      mime_type=EXCLUDED.mime_type,
-      remote_parent_id=EXCLUDED.remote_parent_id,
-      remote_created_time=EXCLUDED.remote_created_time,
-      remote_modified_time=EXCLUDED.remote_modified_time,
-      updated_at=NOW()
-  `;
+    const db = sql(env);
+    const newId = crypto.randomUUID();
+    await db`
+      INSERT INTO file_metadata
+        (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+      VALUES
+        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+      ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+        virtual_path=EXCLUDED.virtual_path,
+        file_name=EXCLUDED.file_name,
+        is_starred=EXCLUDED.is_starred,
+        size=EXCLUDED.size,
+        mime_type=EXCLUDED.mime_type,
+        remote_parent_id=EXCLUDED.remote_parent_id,
+        remote_created_time=EXCLUDED.remote_created_time,
+        remote_modified_time=EXCLUDED.remote_modified_time,
+        updated_at=NOW()
+    `;
 
-  await completeSaga(env, sagaId);
-  const bytes = Number(result.size || source.size || 0);
-  await updateTransferJob(env, job.user_id, job.id, {
-    status: 'completed',
-    completedNodes: 1,
-    bytesCompleted: bytes,
-    payload: { destinationFileId: newId, remoteResult: result, sagaId },
-  });
-  return { id: job.id, destinationFileId: newId, bytesCompleted: bytes };
+    await completeSaga(env, sagaId);
+    const bytes = Number(result.size || source.size || 0);
+    await updateTransferJob(env, job.user_id, job.id, {
+      status: 'completed',
+      completedNodes: 1,
+      bytesCompleted: bytes,
+      payload: { destinationFileId: newId, remoteResult: result, sagaId },
+    });
+    return { id: job.id, destinationFileId: newId, bytesCompleted: bytes };
+  } catch (error) {
+    if (sagaId) {
+      try {
+        await failSaga(env, sagaId, error, remoteSucceeded);
+      } catch (sagaError) {
+        console.error('[transfer-job] saga update failed:', sagaError);
+      }
+    }
+    throw error;
+  }
 }
 
-export async function failTransferJob(env, job, error, sagaId = null, remoteSucceeded = false) {
-  if (sagaId) {
-    try {
-      await failSaga(env, sagaId, error, remoteSucceeded);
-    } catch (sagaError) {
-      console.error('[transfer-job] saga update failed:', sagaError);
-    }
-  }
+export async function failTransferJob(env, job, error) {
   try {
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'failed',
