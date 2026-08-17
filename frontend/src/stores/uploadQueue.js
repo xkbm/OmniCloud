@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { api } from '../services/api';
 
+const MAX_TRANSIENT_UPLOAD_RETRIES = 2;
+
 function normalizePath(path) {
 	if (!path || path === '/') return '/';
 	const prefixed = path.startsWith('/') ? path : `/${path}`;
@@ -34,6 +36,10 @@ function normalizeUploadEntry(entry) {
 
 function isAbortError(error) {
 	return error?.name === 'AbortError';
+}
+
+function isTransientUploadError(error) {
+	return error?.code === 'STORAGE_TRANSIENT' || [429, 502, 503, 504].includes(Number(error?.status));
 }
 
 function isCancellable(operation) {
@@ -75,7 +81,7 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 			const latestBatchId = activeItems.find((item) => item.batchId)?.batchId;
 			const batchItems = latestBatchId
 				? state.uploads.filter((item) => item.batchId === latestBatchId)
-				: activeItems;
+			: activeItems;
 
 			return calculateBatchProgress(batchItems);
 		},
@@ -202,9 +208,6 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 					document.body.appendChild(link);
 					link.click();
 					link.remove();
-
-					// The browser now owns the response stream and writes it directly
-					// to its download pipeline. No response body is read into JS memory.
 					this.updateUpload(queueItem.id, { progress_percentage: 100, status: 'completed' });
 				} catch (error) {
 					if (isAbortError(error)) {
@@ -227,38 +230,56 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 
 				const queueItem = this.registerUpload(file, currentPath, relativePath, { batchId, batchTotal });
 				const targetPath = buildVirtualPath(currentPath, relativePath);
+				let lastError = null;
 
-				try {
-					const { data } = await api.initiateUpload({
-						file_name: file.name,
-						size: file.size,
-						mime_type: file.type || 'application/octet-stream',
-						virtual_path: targetPath,
-					}, { signal: queueItem.abortController.signal });
+				for (let attempt = 0; attempt <= MAX_TRANSIENT_UPLOAD_RETRIES; attempt += 1) {
+					try {
+						const { data } = await api.initiateUpload({
+							file_name: file.name,
+							size: file.size,
+							mime_type: file.type || 'application/octet-stream',
+							virtual_path: targetPath,
+						}, { signal: queueItem.abortController.signal });
 
-					const uploadId = data?.upload_id || data?.id;
-					if (!uploadId) throw new Error('Upload session was not created');
+						const uploadId = data?.upload_id || data?.id;
+						if (!uploadId) throw new Error('Upload session was not created');
 
-					this.updateUpload(queueItem.id, {
-						status: 'uploading',
-						remoteUploadId: uploadId,
-						progress_percentage: 1,
-					});
+						this.updateUpload(queueItem.id, {
+							status: 'uploading',
+							remoteUploadId: uploadId,
+							attempt,
+							progress_percentage: attempt > 0 ? 1 : 1,
+						});
 
-					await api.uploadFile(uploadId, file, { signal: queueItem.abortController.signal });
+						await api.uploadFile(uploadId, file, { signal: queueItem.abortController.signal });
 
-					this.updateUpload(queueItem.id, {
-						progress_percentage: 100,
-						status: 'completed',
-					});
-					onCompleted?.();
-				} catch (error) {
-					if (isAbortError(error) || queueItem.abortController.signal.aborted) {
-						this.updateUpload(queueItem.id, { status: 'cancelled', error: null });
-						continue;
+						this.updateUpload(queueItem.id, {
+							progress_percentage: 100,
+							status: 'completed',
+							attempt,
+						});
+						onCompleted?.();
+						lastError = null;
+						break;
+					} catch (error) {
+						lastError = error;
+						if (isAbortError(error) || queueItem.abortController.signal.aborted) {
+							this.updateUpload(queueItem.id, { status: 'cancelled', error: null });
+							break;
+						}
+						if (!isTransientUploadError(error) || attempt >= MAX_TRANSIENT_UPLOAD_RETRIES) break;
+						this.updateUpload(queueItem.id, {
+							status: 'retrying',
+							error: null,
+							retryCount: attempt + 1,
+							progress_percentage: 0,
+						});
+						await new Promise((resolve) => window.setTimeout(resolve, 500 * (2 ** attempt)));
 					}
+				}
 
-					this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
+				if (lastError && !isAbortError(lastError) && !queueItem.abortController.signal.aborted) {
+					this.updateUpload(queueItem.id, { status: 'failed', error: lastError.message, retryCount: MAX_TRANSIENT_UPLOAD_RETRIES });
 				}
 			}
 		},
