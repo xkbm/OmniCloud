@@ -18,6 +18,7 @@ async function request(path, options = {}) {
 		const payload = await response.json().catch(() => ({ error: 'Unknown API error' }));
 		const error = new Error(payload.error || 'API request failed');
 		error.status = response.status;
+		error.code = payload.code || null;
 		throw error;
 	}
 
@@ -214,7 +215,10 @@ export const api = {
 
 		if (!response.ok) {
 			const payload = await response.json().catch(() => ({ error: 'Upload failed' }));
-			throw new Error(payload.error || 'Upload failed');
+			const error = new Error(payload.error || 'Upload failed');
+			error.status = response.status;
+			error.code = payload.code || null;
+			throw error;
 		}
 
 		return response.json();
