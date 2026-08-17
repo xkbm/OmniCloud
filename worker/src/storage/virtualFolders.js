@@ -1,5 +1,6 @@
 import { sql } from '../db.js';
 import { normalizeVirtualPath } from '../utils/fileNames.js';
+import { performCreateFolder } from '../providers/storage.js';
 
 function normalizeFolderPath(path) {
   const normalized = normalizeVirtualPath(path || '/');
@@ -107,6 +108,67 @@ export async function listVirtualFolderMaterializations(env, userId, virtualFold
     WHERE vfm.user_id=${userId} AND vfm.virtual_folder_id=${virtualFolderId}
     ORDER BY ca.created_at ASC, ca.id ASC
   `;
+}
+
+export async function ensurePhysicalFolderPath(db, env, userId, account, virtualPath) {
+  const normalized = normalizeFolderPath(virtualPath || '/');
+  if (normalized === '/') return { remoteFileId: null };
+  const parts = normalized.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  let parentRemoteId = null;
+  let currentPath = '/';
+
+  for (const part of parts) {
+    const nextPath = currentPath === '/' ? `/${part}/` : `${currentPath}${part}/`;
+    const folder = (await db`
+      SELECT *
+      FROM virtual_folders
+      WHERE user_id=${userId} AND path=${nextPath}
+      LIMIT 1
+    `)[0];
+    if (!folder) throw Object.assign(new Error('Virtual destination folder not found'), { status: 404, code: 'DESTINATION_FOLDER_NOT_FOUND' });
+
+    let materialization = (await db`
+      SELECT *
+      FROM virtual_folder_materializations
+      WHERE user_id=${userId}
+        AND virtual_folder_id=${folder.id}
+        AND cloud_account_id=${account.id}
+        AND status='active'
+      LIMIT 1
+    `)[0] || null;
+
+    if (!materialization) {
+      const remoteFolder = await performCreateFolder(env, account, {
+        name: folder.name,
+        virtualPath: folder.parent_path,
+        remoteParentId: parentRemoteId,
+      });
+      materialization = await upsertVirtualFolderMaterialization(env, {
+        userId,
+        virtualFolderId: folder.id,
+        cloudAccountId: account.id,
+        remoteFileId: remoteFolder.remoteFileId,
+        remoteParentId: remoteFolder.remoteParentId || parentRemoteId,
+      });
+      await db`
+        INSERT INTO file_metadata
+          (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id)
+        VALUES
+          (${crypto.randomUUID()},${userId},${folder.parent_path},${folder.name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${remoteFolder.remoteFileId},${remoteFolder.remoteParentId || parentRemoteId || null})
+        ON CONFLICT (cloud_account_id,remote_file_id)
+        DO UPDATE SET
+          file_name=EXCLUDED.file_name,
+          virtual_path=EXCLUDED.virtual_path,
+          remote_parent_id=EXCLUDED.remote_parent_id,
+          updated_at=NOW()
+      `;
+    }
+
+    parentRemoteId = materialization.remote_file_id;
+    currentPath = nextPath;
+  }
+
+  return { remoteFileId: parentRemoteId };
 }
 
 export { normalizeFolderPath, splitFolderPath };
