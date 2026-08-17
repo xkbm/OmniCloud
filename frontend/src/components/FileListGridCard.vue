@@ -5,6 +5,7 @@ import { IconStarFilled } from '@tabler/icons-vue';
 import TruncateMarquee from './TruncateMarquee.vue';
 import { formatBytes, formatDate, getModifiedTime, providerIcon, providerLabel } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
+import { api } from '../services/api';
 
 const { t } = useI18n();
 
@@ -84,19 +85,30 @@ function handleDragLeave(event) {
 	}
 }
 
-function handleDrop(event) {
+async function handleDrop(event) {
 	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
 	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
 	event.preventDefault();
 	isDropTarget.value = false;
-	window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
-		detail: {
-			sourceFileId: event.dataTransfer.getData(dragMime),
-			sourceWasSelected: event.dataTransfer.getData(dragSelectedMime) === 'true',
-			targetFolder: props.item,
-		},
+
+	const sourceFileId = event.dataTransfer.getData(dragMime);
+	if (!sourceFileId || sourceFileId === props.item.id) return;
+
+	window.dispatchEvent(new CustomEvent('omnicloud-drag-move-start', {
+		detail: { sourceFileId, targetFolder: props.item },
 	}));
+
+	try {
+		await api.moveFile(sourceFileId, { target_folder_id: props.item.id });
+		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-complete', {
+			detail: { sourceFileId, targetFolder: props.item },
+		}));
+	} catch (error) {
+		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-error', {
+			detail: { error },
+		}));
+	}
 }
 </script>
 
