@@ -3,6 +3,8 @@ import { sql } from '../db.js';
 import { getLegacyAdapter } from './legacy.js';
 import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount } from './google.js';
 import { googleMove } from './googleMove.js';
+import { googleReplaceFile } from './googleReplace.js';
+import { resolveUploadFileName } from './duplicatePolicy.js';
 
 export function nodeReadableFromWeb(stream) {
   return stream ? Readable.fromWeb(stream) : null;
@@ -19,15 +21,10 @@ export async function syncStorageAccount(env, userId, account) {
   const records = await adapter.fetchStructure();
   const summary = await adapter.getStorageSummary().catch(() => null);
   const db = sql(env);
-  if (summary) {
-    await db`UPDATE cloud_accounts SET total_space=${Number(summary.totalSpace||account.total_space||0)}, used_space=${Number(summary.usedSpace||0)}, updated_at=NOW() WHERE id=${account.id} AND user_id=${userId}`;
-  }
+  if (summary) await db`UPDATE cloud_accounts SET total_space=${Number(summary.totalSpace||account.total_space||0)}, used_space=${Number(summary.usedSpace||0)}, updated_at=NOW() WHERE id=${account.id} AND user_id=${userId}`;
   await db`DELETE FROM file_metadata WHERE cloud_account_id=${account.id} AND user_id=${userId}`;
   for (const record of records) {
-    await db`
-      INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
-      VALUES (${crypto.randomUUID()},${userId},${record.virtual_path||'/'},${record.file_name},${Boolean(record.is_folder)},${Boolean(record.is_starred)},${Number(record.size||0)},${record.mime_type||null},${account.id},${String(record.remote_file_id||`${account.provider}:${record.virtual_path||'/'}:${record.file_name}`)},${record.remote_parent_id||null},${record.remote_created_time||null},${record.remote_modified_time||null})
-      ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,is_folder=EXCLUDED.is_folder,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.remote_modified_time,updated_at=NOW()`;
+    await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${userId},${record.virtual_path||'/'},${record.file_name},${Boolean(record.is_folder)},${Boolean(record.is_starred)},${Number(record.size||0)},${record.mime_type||null},${account.id},${String(record.remote_file_id||`${account.provider}:${record.virtual_path||'/'}:${record.file_name}`)},${record.remote_parent_id||null},${record.remote_created_time||null},${record.remote_modified_time||null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,is_folder=EXCLUDED.is_folder,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.remote_modified_time,updated_at=NOW()`;
   }
   return { synced: records.length, totalSpace: summary?.totalSpace ?? null, usedSpace: summary?.usedSpace ?? null };
 }
@@ -68,9 +65,41 @@ export async function performCreateFolder(env, account, { name, virtualPath, rem
 }
 
 export async function performUpload(env, account, input) {
-  if (account.provider === 'google_drive') return googleUpload(env, account, input);
+  const duplicatePolicy = input.duplicatePolicy || 'rename';
+  let existing = null;
+  let fileName = input.fileName;
+
+  if (duplicatePolicy === 'overwrite') {
+    const resolved = await resolveUploadFileName(env, account, input);
+    existing = resolved.existing;
+    fileName = resolved.fileName;
+  }
+
+  if (account.provider === 'google_drive') {
+    if (duplicatePolicy === 'overwrite' && existing?.remote_file_id) {
+      return googleReplaceFile(env, account, existing.remote_file_id, {
+        body: input.body,
+        fileName,
+        mimeType: input.mimeType,
+        size: input.size,
+        onProgress: input.onProgress,
+      });
+    }
+    return googleUpload(env, account, { ...input, fileName, duplicatePolicy });
+  }
+
   const { adapter } = await getStorageAdapter(env, account);
-  return adapter.uploadStream({ stream: nodeReadableFromWeb(input.body), size: input.size, fileName: input.fileName, mimeType: input.mimeType, virtualPath: input.virtualPath, remoteParentId: input.remoteParentId, onProgress: input.onProgress });
+  return adapter.uploadStream({
+    stream: nodeReadableFromWeb(input.body),
+    size: input.size,
+    fileName,
+    mimeType: input.mimeType,
+    virtualPath: input.virtualPath,
+    remoteParentId: input.remoteParentId,
+    duplicatePolicy,
+    existingRemoteId: existing?.remote_file_id || null,
+    onProgress: input.onProgress,
+  });
 }
 
 export async function setStar(env, account, row, isStarred) {
