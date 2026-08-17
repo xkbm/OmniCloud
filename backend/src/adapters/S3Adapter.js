@@ -5,6 +5,7 @@ import {
 	HeadBucketCommand,
 	GetObjectCommand,
 	DeleteObjectCommand,
+	DeleteObjectsCommand,
 	CopyObjectCommand,
 	PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -74,7 +75,7 @@ export class S3Adapter extends BaseCloudAdapter {
 		return { client: this.clientCache, bucket: this.bucketCache };
 	}
 
-	async listAllObjects() {
+	async listAllObjects(prefix) {
 		const { client, bucket } = this.getClient();
 		const objects = [];
 		let continuationToken;
@@ -83,6 +84,7 @@ export class S3Adapter extends BaseCloudAdapter {
 			const response = await client.send(
 				new ListObjectsV2Command({
 					Bucket: bucket,
+					Prefix: prefix || undefined,
 					ContinuationToken: continuationToken,
 				}),
 			);
@@ -236,36 +238,66 @@ export class S3Adapter extends BaseCloudAdapter {
 		return Readable.fromWeb(response.Body);
 	}
 
-	async renameFile(fileRecord, nextName) {
+	async moveKey(fromKey, toKeyName) {
 		const { client, bucket } = this.getClient();
-		const fromKey = fileRecord.remote_file_id || toKey(fileRecord.virtual_path, fileRecord.file_name);
-		const toKeyName = toKey(fileRecord.virtual_path, nextName);
-
 		await client.send(
 			new CopyObjectCommand({
 				Bucket: bucket,
-				CopySource: `${bucket}/${fromKey}`,
+				CopySource: `${bucket}/${encodeURIComponent(fromKey)}`,
 				Key: toKeyName,
 			}),
 		);
-		await client.send(
-			new DeleteObjectCommand({
-				Bucket: bucket,
-				Key: fromKey,
-			}),
-		);
+		await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: fromKey }));
+	}
+
+	async moveFile(fileRecord, destination = {}) {
+		const sourceKey = fileRecord.remote_file_id || toKey(fileRecord.virtual_path, fileRecord.file_name);
+		const destinationVirtualPath = normalizeVirtualPath(destination.virtualPath || '/');
+		const targetKey = fileRecord.is_folder
+			? `${toKey(destinationVirtualPath, fileRecord.file_name)}/`
+			: toKey(destinationVirtualPath, fileRecord.file_name);
+
+		if (sourceKey === targetKey) return { remoteFileId: targetKey, remoteParentId: destinationVirtualPath };
+
+		if (fileRecord.is_folder) {
+			const objects = await this.listAllObjects(sourceKey);
+			for (const object of objects) {
+				const key = object.Key;
+				const relative = key.slice(sourceKey.length);
+				await this.moveKey(key, `${targetKey}${relative}`);
+			}
+			if (!objects.some((object) => object.Key === sourceKey)) {
+				await this.moveKey(sourceKey, targetKey);
+			}
+		} else {
+			await this.moveKey(sourceKey, targetKey);
+		}
+
+		return { remoteFileId: targetKey, remoteParentId: destinationVirtualPath };
+	}
+
+	async renameFile(fileRecord, nextName) {
+		return this.moveFile(fileRecord, { virtualPath: fileRecord.virtual_path, fileName: nextName });
 	}
 
 	async deleteFile(fileRecord) {
 		const { client, bucket } = this.getClient();
 		const key = fileRecord.remote_file_id || toKey(fileRecord.virtual_path, fileRecord.file_name);
 
-		await client.send(
-			new DeleteObjectCommand({
-				Bucket: bucket,
-				Key: key,
-			}),
-		);
+		if (fileRecord.is_folder) {
+			const objects = await this.listAllObjects(key);
+			for (let index = 0; index < objects.length; index += 1000) {
+				const batch = objects.slice(index, index + 1000).filter((object) => object.Key);
+				if (!batch.length) continue;
+				await client.send(new DeleteObjectsCommand({
+					Bucket: bucket,
+					Delete: { Objects: batch.map((object) => ({ Key: object.Key })), Quiet: true },
+				}));
+			}
+			return;
+		}
+
+		await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 	}
 
 	async getFileDetails(fileRecord) {
@@ -282,4 +314,3 @@ export class S3Adapter extends BaseCloudAdapter {
 		};
 	}
 }
-
