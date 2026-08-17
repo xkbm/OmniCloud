@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { sql } from '../db.js';
 import { getLegacyAdapter } from './legacy.js';
-import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount, googleGetFileMetadata } from './google.js';
+import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount, googleRequest } from './google.js';
 import { googleMove } from './googleMove.js';
 import { googleReplaceFile } from './googleReplace.js';
 import { resolveUploadFileName } from './duplicatePolicy.js';
@@ -56,7 +56,17 @@ export async function performDownload(env, account, row) {
 
 export async function performGetMetadata(env, account, row) {
   if (account.provider === 'google_drive') {
-    return googleGetFileMetadata(env, account, row.remote_file_id);
+    const data = await googleRequest(env, account, `/${encodeURIComponent(row.remote_file_id)}?fields=id,name,mimeType,size,parents,createdTime,modifiedTime,trashed`);
+    return {
+      name: data?.name || row.file_name,
+      mime_type: data?.mimeType || row.mime_type || null,
+      size: Number(data?.size || 0),
+      createdTime: data?.createdTime || null,
+      modifiedTime: data?.modifiedTime || null,
+      remote_file_id: data?.id || row.remote_file_id,
+      remote_parent_id: data?.parents?.[0] || null,
+      provider: 'google_drive',
+    };
   }
   const { adapter } = await getStorageAdapter(env, account);
   if (typeof adapter.getFileDetails !== 'function') throw Object.assign(new Error(`Metadata verification is not supported for provider ${account.provider}`), { status: 409, code: 'METADATA_VERIFY_UNSUPPORTED' });
