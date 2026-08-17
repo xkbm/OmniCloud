@@ -35,6 +35,51 @@ export async function loadStoragePool(env, userId) {
   });
 }
 
+function weightedCandidates(candidates) {
+  return candidates.flatMap((backend) => {
+    const freeRatio = backend.totalSpace > 0 ? backend.freeSpace / backend.totalSpace : 0;
+    const weight = Math.max(1, Math.round(freeRatio * 10));
+    return Array.from({ length: weight }, () => backend);
+  });
+}
+
+async function nextPersistentCursor(db, userId, modulus) {
+  const rows = await db`
+    INSERT INTO user_settings (id, user_id, key, value, updated_at)
+    VALUES (${crypto.randomUUID()}, ${userId}, 'allocation_rr_cursor', '0', NOW())
+    ON CONFLICT (user_id, key) DO UPDATE
+    SET value = ((CAST(user_settings.value AS BIGINT) + 1) % ${modulus})::text,
+        updated_at = NOW()
+    RETURNING value
+  `;
+  return Number.parseInt(rows[0]?.value || '0', 10);
+}
+
+export async function chooseStorageBackend(env, userId, size, { backendId = null } = {}) {
+  const pool = await loadStoragePool(env, userId);
+  if (backendId) {
+    return pool.chooseBackend(size, { backendId });
+  }
+
+  const candidates = pool.activeBackends.filter((backend) => backend.canStore(size));
+  if (!candidates.length) return null;
+
+  if (pool.strategy === 'round_robin') {
+    const db = sql(env);
+    const cursor = await nextPersistentCursor(db, userId, candidates.length);
+    return candidates[cursor % candidates.length];
+  }
+
+  if (pool.strategy === 'weighted_round_robin') {
+    const weighted = weightedCandidates(candidates);
+    const db = sql(env);
+    const cursor = await nextPersistentCursor(db, userId, weighted.length);
+    return weighted[cursor % weighted.length];
+  }
+
+  return pool.chooseBackend(size);
+}
+
 export async function saveStorageSetting(env, userId, key, value) {
   const db = sql(env);
   await db`
