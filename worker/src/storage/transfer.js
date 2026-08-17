@@ -108,17 +108,24 @@ async function transferFileNode({ env, userId, source, destination, destinationP
   };
 }
 
-async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource, onProgress }) {
+async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource, onProgress, createRoot = true, existingRootRemoteId = null }) {
   if (nodes.length > MAX_RECURSIVE_TRANSFER_NODES) {
     throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
   }
 
   const destinationAccount = accountFromRow(destination, userId);
   const sourceRootPath = `${String(source.virtual_path || '/').replace(/\/$/, '')}/${source.file_name}`.replace(/^\/+/, '/');
-  const destinationRootPath = `${destinationPath === '/' ? '' : destinationPath}${source.file_name}/`.replace(/\/+/g, '/');
-  const rootFolder = await performCreateFolder(env, destinationAccount, { name: source.file_name, virtualPath: destinationPath, remoteParentId: destinationParentId });
-  const rootRemoteId = rootFolder.remoteFileId;
-  if (!rootRemoteId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
+  const destinationRootPath = createRoot
+    ? `${destinationPath === '/' ? '' : destinationPath}${source.file_name}/`.replace(/\/+/g, '/')
+    : String(destinationPath || '/').replace(/\/+/g, '/').replace(/\/?$/, '/');
+
+  let rootRemoteId = existingRootRemoteId;
+  if (createRoot) {
+    const rootFolder = await performCreateFolder(env, destinationAccount, { name: source.file_name, virtualPath: destinationPath, remoteParentId: destinationParentId });
+    rootRemoteId = rootFolder.remoteFileId;
+    if (!rootRemoteId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
+  }
+  if (!rootRemoteId) throw Object.assign(new Error('Existing destination root is required when createRoot is false'), { status: 400, code: 'DESTINATION_ROOT_REQUIRED' });
 
   const ordered = [...nodes].sort((a, b) => String(a.virtual_path || '').length - String(b.virtual_path || '').length || String(a.file_name).localeCompare(String(b.file_name)));
   const folderMap = new Map([[source.id, rootRemoteId]]);
@@ -164,7 +171,7 @@ async function transferTree({ env, userId, source, destination, destinationPath,
     }
   }
 
-  return { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || null }, nodes: results };
+  return { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || 'application/vnd.google-apps.folder' }, nodes: results };
 }
 
 export async function transferFile(options) {
@@ -195,8 +202,8 @@ export async function copyFile(options) {
 }
 
 export async function copyFolder(options) {
-  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress } = options;
-  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: false, onProgress });
+  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress, existingRootRemoteId } = options;
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: false, onProgress, createRoot: !existingRootRemoteId, existingRootRemoteId });
   await onRemoteSuccess?.({ tree: result });
   return result;
 }
