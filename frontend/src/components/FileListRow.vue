@@ -17,6 +17,7 @@ const emit = defineEmits(['select', 'open', 'contextmenu']);
 const isDragging = ref(false);
 const isDropTarget = ref(false);
 const dragMime = 'application/x-omnicloud-file';
+const dragSelectedMime = 'application/x-omnicloud-selected';
 
 const displayName = computed(() => {
 	if (props.nameField === 'display_name') {
@@ -45,6 +46,7 @@ function handleDragStart(event) {
 	isDragging.value = true;
 	event.dataTransfer.effectAllowed = 'move';
 	event.dataTransfer.setData(dragMime, props.item.id);
+	event.dataTransfer.setData(dragSelectedMime, String(props.selected));
 	event.dataTransfer.setData('text/plain', props.item.file_name || '');
 }
 
@@ -88,8 +90,7 @@ function handleDrop(event) {
 	window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
 		detail: {
 			sourceFileId: event.dataTransfer.getData(dragMime),
-			sourceWasSelected: props.selected,
-			sourceFile: props.item.id === event.dataTransfer.getData(dragMime) ? props.item : null,
+			sourceWasSelected: event.dataTransfer.getData(dragSelectedMime) === 'true',
 			targetFolder: props.item,
 		},
 	}));
