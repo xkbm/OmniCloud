@@ -6,6 +6,7 @@ import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.
 import { chooseStorageBackend, reserveStorage, releaseStorageReservation } from '../storage/service.js';
 import { ensureVirtualFolder, getVirtualFolderMaterialization, upsertVirtualFolderMaterialization, splitFolderPath } from '../storage/virtualFolders.js';
 import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
+import { isTransientStorageError } from '../utils/storageErrors.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
 const SAFE_UPLOAD_ERROR_CODES = new Set(['MAX_FILE_SIZE_EXCEEDED', 'FILE_TYPE_NOT_ALLOWED', 'MIME_EXTENSION_MISMATCH']);
@@ -23,10 +24,15 @@ function sizeLimitResponse(c, maxFileSize) {
 function safeErrorResponse(c, error, fallback, code) {
   if (error instanceof Response) return error;
   console.error('[uploads] request failed:', error);
-  const safeCode = SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? error.code : code;
-  const safeMessage = SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? String(error?.message || fallback) : fallback;
+  const transient = isTransientStorageError(error);
+  const safeCode = transient ? 'STORAGE_TRANSIENT' : SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? error.code : code;
+  const safeMessage = SAFE_UPLOAD_ERROR_CODES.has(error?.code)
+    ? String(error?.message || fallback)
+    : transient
+      ? 'Storage provider temporarily unavailable'
+      : fallback;
   const requestedStatus = Number(error?.status);
-  const status = [400,409,413].includes(requestedStatus) ? requestedStatus : 500;
+  const status = transient ? 503 : [400,409,413].includes(requestedStatus) ? requestedStatus : 500;
   return c.json({ error: safeMessage, code: safeCode }, status);
 }
 
