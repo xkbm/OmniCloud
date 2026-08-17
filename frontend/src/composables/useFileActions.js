@@ -19,6 +19,7 @@ export function useFileActions({
   getPreviewType,
   previewUnsupportedMessage = 'Preview belum didukung untuk tipe file ini.',
   onProgress,
+  onTransferProgress,
 }) {
   if (!errorRef || typeof t !== 'function' || typeof getFileCategory !== 'function' || !uploadQueueStore || typeof refresh !== 'function') {
     throw new Error('useFileActions: required options missing');
@@ -100,6 +101,20 @@ export function useFileActions({
       const response = await api.getTransfer(jobId);
       const job = response?.data;
       if (!job) throw new Error('Transfer job not found');
+
+      const totalBytes = Number(job.bytes_total || 0);
+      const completedBytes = Number(job.bytes_completed || 0);
+      const totalNodes = Number(job.total_nodes || 0);
+      const completedNodes = Number(job.completed_nodes || 0);
+      const percent = totalBytes > 0
+        ? Math.min(100, Math.round((completedBytes / totalBytes) * 100))
+        : totalNodes > 0
+          ? Math.min(100, Math.round((completedNodes / totalNodes) * 100))
+          : 0;
+
+      if (typeof onTransferProgress === 'function') {
+        onTransferProgress({ job, percent, completedBytes, totalBytes, completedNodes, totalNodes });
+      }
 
       if (job.status === 'completed') return job;
       if (job.status === 'failed') throw new Error(job.error_message || 'Transfer failed');
@@ -278,47 +293,27 @@ export function useFileActions({
   async function toggleSelectedFileStar() {
     const file = resolveFile();
     if (!file || !file.capabilities?.starred) return;
-    const nextStarred = !Boolean(file.is_starred);
-    const label = nextStarred ? t('drive.star') : t('drive.unstar');
     closeContextMenu();
     errorRef.value = '';
     try {
-      await runWithProgress(label, () => api.toggleStar(file.id, nextStarred));
+      await runWithProgress(
+        file.is_starred ? t('drive.removingStar') : t('drive.addingStar'),
+        () => api.toggleStar(file.id, !file.is_starred),
+      );
       await refresh();
     } catch (error) {
       errorRef.value = error.message;
     }
   }
 
-  function downloadSelection() {
-    const downloadableFiles = getActionFiles().filter((file) => !file.is_folder);
-    closeContextMenu();
-    uploadQueueStore.downloadFiles(downloadableFiles).catch((error) => {
-      errorRef.value = error.message;
-    });
+  function handleWindowPointerDown(event) {
+    if (!event.target.closest('[data-context-menu]')) closeContextMenu();
   }
 
-  function triggerDownload(file) {
-    closeContextMenu();
-    if (file?.is_folder) return;
-    uploadQueueStore.downloadFile(file).catch((error) => {
-      errorRef.value = error.message;
-    });
-  }
-
-  function handleMoveEvent() {
-    moveSelectedFile();
-  }
-
-  onMounted(() => {
-    window.addEventListener('omnicloud-move-file', handleMoveEvent);
-    window.addEventListener('omnicloud-drag-move', handleDragMoveEvent);
-  });
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('omnicloud-move-file', handleMoveEvent);
-    window.removeEventListener('omnicloud-drag-move', handleDragMoveEvent);
-  });
+  onMounted(() => window.addEventListener('pointerdown', handleWindowPointerDown));
+  onBeforeUnmount(() => window.removeEventListener('pointerdown', handleWindowPointerDown));
+  onMounted(() => window.addEventListener('omnicloud:drag-move', handleDragMoveEvent));
+  onBeforeUnmount(() => window.removeEventListener('omnicloud:drag-move', handleDragMoveEvent));
 
   return {
     contextMenu,
@@ -336,7 +331,13 @@ export function useFileActions({
     selectRange,
     selectItem,
     clearSelection,
-    getActionFiles,
+    canDownloadSelection,
+    canRenameSelection,
+    canToggleStarSelection,
+    isPrimarySelectedStarred,
+    canOpenSelection,
+    canPreviewSelection,
+    canMoveSelection,
     previewFile,
     isPreviewOpen,
     isPreviewLoading,
@@ -349,19 +350,14 @@ export function useFileActions({
     isDetailsOpen,
     openDetails,
     closeDetails,
+    showSelectedFileDetails,
     renameSelectedFile,
     deleteSelectedFile,
     moveSelectedFile,
-    downloadSelection,
-    triggerDownload,
     toggleSelectedFileStar,
-    showSelectedFileDetails,
-    canDownloadSelection,
-    canRenameSelection,
-    canToggleStarSelection,
-    isPrimarySelectedStarred,
-    canOpenSelection,
-    canPreviewSelection,
-    canMoveSelection,
+    moveFilesToFolder,
+    moveFilesToPath,
+    actionInProgress: undefined,
+    actionLabel: undefined,
   };
 }
