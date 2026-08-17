@@ -82,7 +82,7 @@ function handleDrop(event) {
   const sourceFileId = event.dataTransfer.getData(dragMime);
   if (!sourceFileId || sourceFileId === props.item.id) return;
 
-  window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
+  window.dispatchEvent(new CustomEvent('omnicloud:drag-move', {
     detail: {
       sourceFileId,
       targetFolder: props.item,
