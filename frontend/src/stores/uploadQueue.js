@@ -231,6 +231,7 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 				const queueItem = this.registerUpload(file, currentPath, relativePath, { batchId, batchTotal });
 				const targetPath = buildVirtualPath(currentPath, relativePath);
 				let lastError = null;
+				const excludedBackendIds = [];
 
 				for (let attempt = 0; attempt <= MAX_TRANSIENT_UPLOAD_RETRIES; attempt += 1) {
 					try {
@@ -239,16 +240,19 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 							size: file.size,
 							mime_type: file.type || 'application/octet-stream',
 							virtual_path: targetPath,
+							exclude_backend_ids: excludedBackendIds,
 						}, { signal: queueItem.abortController.signal });
 
 						const uploadId = data?.upload_id || data?.id;
 						if (!uploadId) throw new Error('Upload session was not created');
 
+						const backendId = data?.cloudAccountId || data?.cloud_account_id || data?.target_account?.id || null;
 						this.updateUpload(queueItem.id, {
 							status: 'uploading',
 							remoteUploadId: uploadId,
+							backendId,
 							attempt,
-							progress_percentage: attempt > 0 ? 1 : 1,
+							progress_percentage: 1,
 						});
 
 						await api.uploadFile(uploadId, file, { signal: queueItem.abortController.signal });
@@ -268,6 +272,8 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 							break;
 						}
 						if (!isTransientUploadError(error) || attempt >= MAX_TRANSIENT_UPLOAD_RETRIES) break;
+						const failedBackendId = queueItem.backendId;
+						if (failedBackendId && !excludedBackendIds.includes(String(failedBackendId))) excludedBackendIds.push(String(failedBackendId));
 						this.updateUpload(queueItem.id, {
 							status: 'retrying',
 							error: null,
