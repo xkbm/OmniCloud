@@ -15,6 +15,7 @@ import { filesRoutes } from './routes/files.js';
 import { googleRoutes } from './routes/google.js';
 import { moveRoutes } from './routes/move.js';
 import { settingsRoutes } from './routes/settings.js';
+import { storageRoutes } from './routes/storage.js';
 import { uploadsRoutes } from './routes/uploads.js';
 import { UploadProgress } from './uploadProgress.js';
 import { sql } from './db.js';
@@ -141,6 +142,7 @@ app.get('/ws/uploads', async (c) => {
 await settingsRoutes(app);
 await accountsRoutes(app);
 await allocationRoutes(app);
+await storageRoutes(app);
 await googleRoutes(app);
 await moveRoutes(app);
 await filesRoutes(app);
