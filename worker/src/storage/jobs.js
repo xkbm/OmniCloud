@@ -71,6 +71,7 @@ export async function claimNextTransferJob(env) {
       SELECT id
       FROM transfer_jobs
       WHERE status='queued'
+        AND COALESCE(payload->>'executorVersion', '') = 'v1'
       ORDER BY created_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -78,6 +79,19 @@ export async function claimNextTransferJob(env) {
     RETURNING *
   `;
   return rows[0] || null;
+}
+
+export async function hasQueuedTransferJobs(env) {
+  const db = sql(env);
+  const rows = await db`
+    SELECT id
+    FROM transfer_jobs
+    WHERE status='queued'
+      AND COALESCE(payload->>'executorVersion', '') = 'v1'
+    ORDER BY created_at ASC
+    LIMIT 1
+  `;
+  return Boolean(rows[0]);
 }
 
 export async function updateTransferJob(env, userId, jobId, patch = {}) {
