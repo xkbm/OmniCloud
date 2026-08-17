@@ -14,22 +14,16 @@ function accountFromRow(row, userId) {
   };
 }
 
-export async function transferFile({ env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess }) {
+async function transfer({ env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, deleteSource }) {
   if (source.is_folder) {
-    throw Object.assign(
-      new Error('Cross-account folder moves require recursive transfer and are not available yet'),
-      { status: 409, code: 'CROSS_ACCOUNT_FOLDER_MOVE_UNSUPPORTED' },
-    );
+    throw Object.assign(new Error('Recursive folder transfers are not available yet'), { status: 409, code: 'FOLDER_TRANSFER_UNSUPPORTED' });
   }
 
   const sourceAccount = accountFromRow(source, userId);
   const destinationAccount = accountFromRow(destination, userId);
   const downloadResponse = await performDownload(env, sourceAccount, source);
   const sourceStream = toWebStream(downloadResponse);
-
-  if (!sourceStream) {
-    throw Object.assign(new Error('Source file could not be streamed'), { status: 502, code: 'SOURCE_STREAM_UNAVAILABLE' });
-  }
+  if (!sourceStream) throw Object.assign(new Error('Source file could not be streamed'), { status: 502, code: 'SOURCE_STREAM_UNAVAILABLE' });
 
   const result = await performUpload(env, destinationAccount, {
     body: sourceStream,
@@ -42,12 +36,7 @@ export async function transferFile({ env, userId, source, destination, destinati
   });
 
   const remoteId = result?.remoteFileId || result?.id;
-  if (!remoteId) {
-    throw Object.assign(new Error('Destination provider did not return a file identifier'), {
-      status: 502,
-      code: 'DESTINATION_WRITE_UNCONFIRMED',
-    });
-  }
+  if (!remoteId) throw Object.assign(new Error('Destination provider did not return a file identifier'), { status: 502, code: 'DESTINATION_WRITE_UNCONFIRMED' });
 
   const destinationRow = {
     ...source,
@@ -66,20 +55,13 @@ export async function transferFile({ env, userId, source, destination, destinati
   try {
     verified = await performGetMetadata(env, destinationAccount, destinationRow);
   } catch (error) {
-    throw Object.assign(new Error('Destination verification failed; original file was preserved'), {
-      status: 502,
-      code: 'DESTINATION_VERIFY_FAILED',
-      cause: error,
-    });
+    throw Object.assign(new Error('Destination verification failed; original file was preserved'), { status: 502, code: 'DESTINATION_VERIFY_FAILED', cause: error });
   }
 
   const expectedSize = Number(source.size || 0);
   const actualSize = Number(verified?.size ?? destinationRow.size ?? 0);
   if (Number.isFinite(expectedSize) && expectedSize >= 0 && Number.isFinite(actualSize) && expectedSize !== actualSize) {
-    throw Object.assign(new Error('Destination verification reported a size mismatch; original file was preserved'), {
-      status: 502,
-      code: 'DESTINATION_SIZE_MISMATCH',
-    });
+    throw Object.assign(new Error('Destination verification reported a size mismatch; original file was preserved'), { status: 502, code: 'DESTINATION_SIZE_MISMATCH' });
   }
 
   await onRemoteSuccess?.({
@@ -96,7 +78,7 @@ export async function transferFile({ env, userId, source, destination, destinati
     verifiedSize: actualSize,
   });
 
-  await performDelete(env, sourceAccount, source);
+  if (deleteSource) await performDelete(env, sourceAccount, source);
 
   return {
     remoteFileId: String(remoteId),
@@ -107,4 +89,12 @@ export async function transferFile({ env, userId, source, destination, destinati
     createdTime: verified?.createdTime || verified?.created_time || null,
     modifiedTime: verified?.modifiedTime || verified?.modified_time || null,
   };
+}
+
+export async function transferFile(options) {
+  return transfer({ ...options, deleteSource: true });
+}
+
+export async function copyFile(options) {
+  return transfer({ ...options, deleteSource: false });
 }
