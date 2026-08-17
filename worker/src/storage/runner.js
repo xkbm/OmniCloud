@@ -1,6 +1,7 @@
 import { sql } from '../db.js';
 import { copyFile, transferFile } from './transfer.js';
 import { updateTransferJob } from './jobs.js';
+import { releaseStorageReservation } from './service.js';
 import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 async function loadSingleFileTransfer(env, job) {
@@ -39,6 +40,7 @@ export async function runTransferJob(env, job) {
   }
 
   const { source, destination } = await loadSingleFileTransfer(env, job);
+  const reservationId = job.payload?.reservationId || null;
   const destinationPath = `${destination.virtual_path || '/'}${destination.file_name}/`.replace(/\\+/g, '/');
   const destinationParentId = destination.remote_file_id || 'root';
   const copy = job.operation === 'copy';
@@ -54,6 +56,7 @@ export async function runTransferJob(env, job) {
       payload: {
         copy,
         transferJobId: job.id,
+        reservationId,
         sourceAccountId: source.cloud_account_id,
         sourceRemoteId: source.remote_file_id,
         destinationAccountId: destination.cloud_account_id,
@@ -105,11 +108,12 @@ export async function runTransferJob(env, job) {
 
     await completeSaga(env, sagaId);
     const bytes = Number(result.size || source.size || 0);
+    if (reservationId) await releaseStorageReservation(env, reservationId, job.user_id);
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'completed',
       completedNodes: 1,
       bytesCompleted: bytes,
-      payload: { destinationFileId: newId, destinationRemoteId, remoteResult: result, sagaId },
+      payload: { destinationFileId: newId, destinationRemoteId, remoteResult: result, sagaId, reservationReleased: Boolean(reservationId) },
     });
     return { id: job.id, destinationFileId: newId, bytesCompleted: bytes };
   } catch (error) {
@@ -118,6 +122,13 @@ export async function runTransferJob(env, job) {
         await failSaga(env, sagaId, error, remoteSucceeded);
       } catch (sagaError) {
         console.error('[transfer-job] saga update failed:', sagaError);
+      }
+    }
+    if (reservationId && !remoteSucceeded) {
+      try {
+        await releaseStorageReservation(env, reservationId, job.user_id);
+      } catch (reservationError) {
+        console.error('[transfer-job] reservation release failed:', reservationError);
       }
     }
     throw error;
