@@ -2,6 +2,8 @@ import { performCreateFolder, performDelete, performDownload, performGetMetadata
 import { toWebStream } from './streams.js';
 
 export const MAX_RECURSIVE_TRANSFER_NODES = 500;
+const PROGRESS_BYTES_STEP = 8 * 1024 * 1024;
+const PROGRESS_TIME_STEP_MS = 1000;
 
 function accountFromRow(row, userId) {
   return {
@@ -16,7 +18,34 @@ function accountFromRow(row, userId) {
   };
 }
 
-async function transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource }) {
+function withProgress(stream, onProgress) {
+  if (typeof onProgress !== 'function') return stream;
+
+  let bytesTransferred = 0;
+  let lastReportedBytes = 0;
+  let lastReportedAt = 0;
+
+  return stream.pipeThrough(new TransformStream({
+    async transform(chunk, controller) {
+      controller.enqueue(chunk);
+      bytesTransferred += Number(chunk?.byteLength || 0);
+
+      const now = Date.now();
+      const shouldReport = bytesTransferred - lastReportedBytes >= PROGRESS_BYTES_STEP
+        || now - lastReportedAt >= PROGRESS_TIME_STEP_MS;
+      if (!shouldReport) return;
+
+      lastReportedBytes = bytesTransferred;
+      lastReportedAt = now;
+      await onProgress(bytesTransferred);
+    },
+    async flush() {
+      if (bytesTransferred !== lastReportedBytes) await onProgress(bytesTransferred);
+    },
+  }));
+}
+
+async function transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource, onProgress }) {
   const sourceAccount = accountFromRow(source, userId);
   const destinationAccount = accountFromRow(destination, userId);
   const downloadResponse = await performDownload(env, sourceAccount, source);
@@ -24,7 +53,7 @@ async function transferFileNode({ env, userId, source, destination, destinationP
   if (!sourceStream) throw Object.assign(new Error('Source file could not be streamed'), { status: 502, code: 'SOURCE_STREAM_UNAVAILABLE' });
 
   const result = await performUpload(env, destinationAccount, {
-    body: sourceStream,
+    body: withProgress(sourceStream, onProgress),
     fileName: source.file_name,
     mimeType: source.mime_type || 'application/octet-stream',
     size: Number(source.size || 0),
@@ -131,28 +160,28 @@ async function transferTree({ env, userId, source, destination, destinationPath,
 }
 
 export async function transferFile(options) {
-  const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, nodes } = options;
+  const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, nodes, onProgress } = options;
   if (source.is_folder) {
     const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes: nodes || [source], deleteSource: true });
     await onRemoteSuccess?.({ tree: result });
     return result;
   }
-  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: true });
+  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: true, onProgress });
   await onRemoteSuccess?.(result);
   return result;
 }
 
 export async function transferFolder(options) {
   const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess } = options;
-  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: true });
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, deleteSource: true });
   await onRemoteSuccess?.({ tree: result });
   return result;
 }
 
 export async function copyFile(options) {
-  const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess } = options;
+  const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress } = options;
   if (source.is_folder) throw Object.assign(new Error('Recursive folder copy is not available yet'), { status: 409, code: 'FOLDER_COPY_UNSUPPORTED' });
-  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: false });
+  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: false, onProgress });
   await onRemoteSuccess?.(result);
   return result;
 }
