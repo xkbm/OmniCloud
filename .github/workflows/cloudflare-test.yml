@@ -54,6 +54,7 @@ jobs:
           node --check worker/src/routes/storage.js
           node --check worker/src/routes/transfers.js
           node --check worker/src/routes/uploads.js
+          node --check worker/src/routes/virtualFolders.js
           node --check worker/src/routes/google.js
           node --check worker/src/providers/storage.js
           node --check worker/src/providers/google.js
@@ -82,6 +83,8 @@ jobs:
           grep -q "virtual_folder_materializations" worker/migrations/2026-08-17-virtual-folders.sql
           grep -q "ensureVirtualFolder" worker/src/storage/virtualFolders.js
           grep -q "upsertVirtualFolderMaterialization" worker/src/storage/virtualFolders.js
+          grep -q "virtualFolderRoutes" worker/src/index.js
+          grep -q "virtualFolderRoutes" worker/src/routes/virtualFolders.js
 
       - name: Verify unified copy contract
         run: |
