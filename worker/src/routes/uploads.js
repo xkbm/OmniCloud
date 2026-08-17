@@ -107,6 +107,7 @@ export async function uploadsRoutes(app) {
       const mimeInput = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
       const virtualPath = normalizeVirtualPath(body.virtualPath || body.virtual_path || '/');
       const duplicatePolicy = normalizeDuplicatePolicy(body.duplicatePolicy || body.duplicate_policy);
+      const excludeBackendIds = Array.isArray(body.exclude_backend_ids) ? body.exclude_backend_ids.filter(Boolean).map(String) : [];
       const maxFileSize = getMaxFileSize(c.env);
 
       if (!fileName) return c.json({ error: 'File name is required', code: 'FILE_NAME_REQUIRED' }, 400);
@@ -116,7 +117,10 @@ export async function uploadsRoutes(app) {
 
       const db = sql(c.env);
       const requested = body.cloud_account_id || body.cloudAccountId || null;
-      const selected = await chooseStorageBackend(c.env, user.id, size, { backendId: requested });
+      const selected = await chooseStorageBackend(c.env, user.id, size, {
+        backendId: requested,
+        excludeBackendIds,
+      });
       if (!selected) return c.json({ error: requested ? 'Requested storage account is not active' : 'No storage backend has enough healthy capacity for this file', code: requested ? 'INVALID_STORAGE_BACKEND' : 'NO_STORAGE_CAPACITY' }, 409);
 
       const accounts = await db`
