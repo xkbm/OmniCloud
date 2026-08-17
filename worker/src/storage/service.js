@@ -1,5 +1,8 @@
 import { sql } from '../db.js';
 import { createStoragePool } from './pool.js';
+import { getLegacyAdapter } from '../providers/legacy.js';
+import { googleRequest } from '../providers/google.js';
+import { nextHealthState, healthyResult } from './health.js';
 
 function parseOrder(value) {
   try {
@@ -69,6 +72,49 @@ export async function chooseStorageBackend(env, userId, size, { backendId = null
   }
 
   return pool.chooseBackend(size, { strategy: pool.strategy, excludedBackendIds: [...excluded] });
+}
+
+export async function probeStorageAccount(env, account) {
+  try {
+    if (account.provider === 'google_drive') {
+      await googleRequest(env, account, '/about?fields=user(emailAddress),storageQuota(limit,usage)');
+    } else {
+      const adapter = await getLegacyAdapter(env, account);
+      if (typeof adapter.getStorageSummary !== 'function') {
+        throw Object.assign(new Error(`Health probe is not supported for provider ${account.provider}`), { code: 'HEALTH_PROBE_UNSUPPORTED', status: 501 });
+      }
+      await adapter.getStorageSummary();
+    }
+    return healthyResult();
+  } catch (error) {
+    return nextHealthState(account.health_status || 'healthy', account.health_failure_count || 0, error);
+  }
+}
+
+export async function probeAllStorageAccounts(env) {
+  const db = sql(env);
+  const accounts = await db`
+    SELECT id, user_id, provider, email, encrypted_credentials, status,
+           health_status, health_checked_at, health_failure_count, total_space, used_space
+    FROM cloud_accounts
+    WHERE status='active'
+    ORDER BY updated_at ASC, id ASC
+  `;
+
+  const results = [];
+  for (const account of accounts) {
+    const result = await probeStorageAccount(env, account);
+    await db`
+      UPDATE cloud_accounts
+      SET health_status=${result.status},
+          health_failure_count=${result.failureCount},
+          health_checked_at=NOW(),
+          updated_at=NOW()
+      WHERE id=${account.id} AND user_id=${account.user_id}
+    `;
+    results.push({ id: account.id, provider: account.provider, status: result.status, failureCount: result.failureCount });
+  }
+  return results;
 }
 
 async function nextPersistentCursor(db, userId, modulus) {
