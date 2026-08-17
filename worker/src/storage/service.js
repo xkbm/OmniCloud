@@ -85,21 +85,23 @@ export async function reserveStorage(env, { userId, accountId, bytes, uploadId, 
   const id = crypto.randomUUID();
   const db = sql(env);
   const rows = await db`
-    WITH capacity AS (
-      SELECT ca.id,
-             ca.total_space,
-             ca.used_space,
+    WITH locked_account AS (
+      SELECT id, total_space, used_space
+      FROM cloud_accounts
+      WHERE id=${accountId}
+        AND user_id=${userId}
+        AND status='active'
+      FOR UPDATE
+    ), capacity AS (
+      SELECT la.id, la.total_space, la.used_space,
              COALESCE((
                SELECT SUM(sr.bytes)
                FROM storage_reservations sr
-               WHERE sr.cloud_account_id = ca.id
+               WHERE sr.cloud_account_id = la.id
                  AND sr.status = 'active'
                  AND sr.expires_at > NOW()
              ), 0) AS reserved_bytes
-      FROM cloud_accounts ca
-      WHERE ca.id = ${accountId}
-        AND ca.user_id = ${userId}
-        AND ca.status = 'active'
+      FROM locked_account la
     )
     INSERT INTO storage_reservations
       (id,user_id,cloud_account_id,bytes,upload_id,status,expires_at)
