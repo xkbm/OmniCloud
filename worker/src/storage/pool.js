@@ -23,12 +23,16 @@ export class StoragePool {
     return this.backends.filter((backend) => backend.healthy);
   }
 
+  get placementBackends() {
+    return this.activeBackends.filter((backend) => backend.placementHealthy);
+  }
+
   get capacity() {
-    return this.activeBackends.reduce((sum, backend) => sum + backend.totalSpace, 0);
+    return this.placementBackends.reduce((sum, backend) => sum + backend.totalSpace, 0);
   }
 
   get used() {
-    return this.activeBackends.reduce((sum, backend) => sum + backend.usedSpace, 0);
+    return this.placementBackends.reduce((sum, backend) => sum + backend.usedSpace, 0);
   }
 
   get free() {
@@ -60,7 +64,7 @@ export class StoragePool {
     const excluded = new Set((Array.isArray(options.excludedBackendIds) ? options.excludedBackendIds : [options.excludedBackendIds])
       .filter(Boolean)
       .map(String));
-    const candidates = this.activeBackends.filter((backend) => !excluded.has(backend.id) && backend.canStore(size));
+    const candidates = this.placementBackends.filter((backend) => !excluded.has(backend.id) && backend.canStore(size));
     if (!candidates.length) return null;
 
     if (options.backendId) {
