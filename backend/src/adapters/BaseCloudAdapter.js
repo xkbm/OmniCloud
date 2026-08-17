@@ -73,6 +73,10 @@ export class BaseCloudAdapter {
 		throw new Error(`Rename is not supported for provider ${this.account.provider}`);
 	}
 
+	async moveFile() {
+		throw new Error(`Move is not supported for provider ${this.account.provider}`);
+	}
+
 	async deleteFile() {
 		throw new Error(`Delete is not supported for provider ${this.account.provider}`);
 	}
