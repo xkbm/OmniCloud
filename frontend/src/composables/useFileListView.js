@@ -188,6 +188,13 @@ export function useFileListView({
 		getPreviewType,
 		previewUnsupportedMessage,
 		onProgress: actionProgress.runWithProgress,
+		onTransferProgress: ({ percent, completedNodes, totalNodes, totalBytes }) => {
+			const nodeText = totalNodes > 1 ? ` · ${completedNodes}/${totalNodes}` : '';
+			const byteText = totalBytes > 0 ? ` · ${percent}%` : '';
+			if (totalBytes > 0 || totalNodes > 0) {
+				actionProgress.setActionLabel(`Moviendo${byteText || nodeText}`);
+			}
+		},
 	});
 
 	const originalRename = actionsApi.renameSelectedFile;
