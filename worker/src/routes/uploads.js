@@ -3,7 +3,7 @@ import { performUpload } from '../providers/storage.js';
 import { resolveUploadFileName } from '../providers/duplicatePolicy.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.js';
-import { chooseStorageBackend } from '../storage/service.js';
+import { chooseStorageBackend, reserveStorage, releaseStorageReservation } from '../storage/service.js';
 import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -41,8 +41,11 @@ async function sendProgress(c, uploadId, uploaded, total) {
 
 export async function uploadsRoutes(app) {
   app.post('/api/uploads/initiate', async (c) => {
+    let reservationId = null;
+    let userId = null;
     try {
       const user = await requireUser(c);
+      userId = user.id;
       const body = await c.req.json();
       const fileName = sanitizeFileName(String(body.fileName || body.file_name || ''), { fallback: '' });
       const size = Number(body.size || 0);
@@ -73,39 +76,45 @@ export async function uploadsRoutes(app) {
       const account = accounts[0] || null;
       if (!account) return c.json({ error: 'Selected storage backend is no longer active', code: 'STORAGE_BACKEND_UNAVAILABLE' }, 409);
 
-      const resolved = await resolveUploadFileName(c.env, account, {
-        fileName,
-        virtualPath,
-        remoteParentId,
-        duplicatePolicy,
-      });
-
+      const resolved = await resolveUploadFileName(c.env, account, { fileName, virtualPath, remoteParentId, duplicatePolicy });
       const id = crypto.randomUUID();
+
+      if (size > 0) {
+        const reservation = await reserveStorage(c.env, {
+          userId: user.id,
+          accountId: account.id,
+          bytes: size,
+          uploadId: id,
+          ttlSeconds: Math.max(300, Math.ceil(Number(body.reservationTtlSeconds || 3600))),
+        });
+        reservationId = reservation.id;
+      }
+
       const token = crypto.randomUUID();
-      await db`
-        INSERT INTO upload_sessions
-          (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,duplicate_policy,status)
-        VALUES
-          (${id},${token},${user.id},${account.id},${resolved.fileName},${validation.mimeType},${size},${virtualPath},${remoteParentId},${resolved.duplicatePolicy},'pending')
-      `;
-      return c.json({
-        data: {
-          id,
-          upload_id: id,
-          token,
-          session_token: token,
-          provider: account.provider,
-          cloudAccountId: account.id,
-          cloud_account_id: account.id,
-          target_account: { id: account.id, provider: account.provider, email: account.email },
-          file_name: resolved.fileName,
-          mime_type: validation.mimeType,
-          duplicate_policy: resolved.duplicatePolicy,
-          status: 'pending',
-          max_file_size: maxFileSize,
-        },
-      }, 201);
+      try {
+        await db`
+          INSERT INTO upload_sessions
+            (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,duplicate_policy,status,reservation_id)
+          VALUES
+            (${id},${token},${user.id},${account.id},${resolved.fileName},${validation.mimeType},${size},${virtualPath},${remoteParentId},${resolved.duplicatePolicy},'pending',${reservationId})
+        `;
+      } catch (error) {
+        if (reservationId) await releaseStorageReservation(c.env, reservationId, user.id);
+        throw error;
+      }
+
+      return c.json({ data: {
+        id, upload_id: id, token, session_token: token,
+        provider: account.provider, cloudAccountId: account.id, cloud_account_id: account.id,
+        target_account: { id: account.id, provider: account.provider, email: account.email },
+        file_name: resolved.fileName, mime_type: validation.mimeType,
+        duplicate_policy: resolved.duplicatePolicy, reservation_id: reservationId,
+        reserved_bytes: size, status: 'pending', max_file_size: maxFileSize,
+      } }, 201);
     } catch (error) {
+      if (reservationId && userId) {
+        try { await releaseStorageReservation(c.env, reservationId, userId); } catch (releaseError) { console.error('[uploads] reservation release failed:', releaseError); }
+      }
       return safeErrorResponse(c, error, 'Unable to initiate upload', 'UPLOAD_INIT_FAILED');
     }
   });
@@ -113,8 +122,12 @@ export async function uploadsRoutes(app) {
   app.post('/api/uploads/:uploadId/stream', async (c) => {
     const uploadId = c.req.param('uploadId');
     let sagaId = null;
+    let reservationId = null;
+    let userId = null;
+    let remoteSucceeded = false;
     try {
       const user = await requireUser(c);
+      userId = user.id;
       const db = sql(c.env);
       const rows = await db`
         SELECT us.*,ca.provider,ca.status AS account_status,ca.email,ca.encrypted_credentials,ca.total_space,ca.used_space
@@ -125,6 +138,7 @@ export async function uploadsRoutes(app) {
       `;
       const session = rows[0];
       if (!session) return c.json({ error: 'Upload session not found', code: 'UPLOAD_SESSION_NOT_FOUND' }, 404);
+      reservationId = session.reservation_id || null;
       if (session.status !== 'pending') return c.json({ error: `Upload session is ${session.status}`, code: 'UPLOAD_SESSION_NOT_PENDING' }, 409);
       if (session.account_status !== 'active') return c.json({ error: 'Storage account is not active', code: 'ACCOUNT_INACTIVE' }, 409);
       if (!c.req.raw.body) return c.json({ error: 'Upload body is empty', code: 'EMPTY_UPLOAD_BODY' }, 400);
@@ -137,13 +151,8 @@ export async function uploadsRoutes(app) {
       if (Number.isFinite(contentLength) && contentLength > maxFileSize) return sizeLimitResponse(c, maxFileSize);
       if (Number.isFinite(contentLength) && contentLength !== expectedSize) return c.json({ error: 'Upload content length does not match declared file size', code: 'UPLOAD_SIZE_MISMATCH' }, 400);
 
-      sagaId = await startSaga(c.env, {
-        userId: user.id,
-        accountId: session.cloud_account_id,
-        operation: 'upload',
-        payload: { uploadId, fileName: session.file_name, virtualPath: session.virtual_path, duplicatePolicy: session.duplicate_policy || 'rename' },
-      });
-      await db`UPDATE upload_sessions SET status='uploading',updated_at=NOW() WHERE id=${uploadId}`;
+      sagaId = await startSaga(c.env, { userId: user.id, accountId: session.cloud_account_id, operation: 'upload', payload: { uploadId, fileName: session.file_name, virtualPath: session.virtual_path, duplicatePolicy: session.duplicate_policy || 'rename', reservationId } });
+      await db`UPDATE upload_sessions SET status='uploading',updated_at=NOW() WHERE id=${uploadId} AND user_id=${user.id}`;
 
       const total = expectedSize;
       let uploaded = 0;
@@ -161,47 +170,26 @@ export async function uploadsRoutes(app) {
                 return;
               }
               controller.enqueue(value);
-              if (uploaded - lastReported >= 1024 * 1024 || (total && uploaded >= total)) {
-                lastReported = uploaded;
-                await sendProgress(c, uploadId, uploaded, total);
-              }
+              if (uploaded - lastReported >= 1024 * 1024 || (total && uploaded >= total)) { lastReported = uploaded; await sendProgress(c, uploadId, uploaded, total); }
             }
             if (uploaded !== expectedSize) {
               controller.error(Object.assign(new Error('Uploaded content size does not match declared file size'), { code: 'UPLOAD_SIZE_MISMATCH' }));
               return;
             }
             controller.close();
-          } catch (error) {
-            controller.error(error);
-          } finally {
-            reader.releaseLock();
-          }
+          } catch (error) { controller.error(error); }
+          finally { reader.releaseLock(); }
         },
-        cancel() {
-          reader.cancel().catch(() => {});
-        },
+        cancel() { reader.cancel().catch(() => {}); },
       });
 
-      const account = {
-        id: session.cloud_account_id,
-        user_id: user.id,
-        email: session.email,
-        provider: session.provider,
-        encrypted_credentials: session.encrypted_credentials,
-        status: session.account_status,
-        total_space: session.total_space,
-        used_space: session.used_space,
-      };
+      const account = { id: session.cloud_account_id, user_id: user.id, email: session.email, provider: session.provider, encrypted_credentials: session.encrypted_credentials, status: session.account_status, total_space: session.total_space, used_space: session.used_space };
       const result = await performUpload(c.env, account, {
-        body,
-        fileName: session.file_name,
-        mimeType: session.mime_type,
-        virtualPath: session.virtual_path,
-        remoteParentId: session.remote_parent_id,
-        duplicatePolicy: session.duplicate_policy || 'rename',
-        size: session.size,
+        body, fileName: session.file_name, mimeType: session.mime_type, virtualPath: session.virtual_path,
+        remoteParentId: session.remote_parent_id, duplicatePolicy: session.duplicate_policy || 'rename', size: session.size,
         onProgress: (bytes) => c.executionCtx.waitUntil(sendProgress(c, uploadId, bytes, total)),
       });
+      remoteSucceeded = true;
       await db`UPDATE operation_sagas SET status='remote_succeeded',payload=payload || ${JSON.stringify({ remoteFileId: result.remoteFileId || result.id || null })},updated_at=NOW() WHERE id=${sagaId}`;
 
       const remoteId = result.remoteFileId || result.id;
@@ -214,23 +202,20 @@ export async function uploadsRoutes(app) {
           ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,updated_at=NOW()
         `;
       }
-      await db`UPDATE upload_sessions SET status='completed',updated_at=NOW() WHERE id=${uploadId}`;
+      await db`UPDATE upload_sessions SET status='completed',updated_at=NOW() WHERE id=${uploadId} AND user_id=${user.id}`;
       await completeSaga(c.env, sagaId);
+      if (reservationId) await releaseStorageReservation(c.env, reservationId, user.id);
       await sendProgress(c, uploadId, total, total);
       return c.json({ data: { success: true, uploadId, file: result } }, 201);
     } catch (error) {
-      try {
-        await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId}`;
-      } catch (stateError) {
-        console.error('[uploads] failed to update upload session state:', stateError);
+      if (userId) {
+        try { await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId} AND user_id=${userId}`; } catch (stateError) { console.error('[uploads] failed to update upload session state:', stateError); }
+        if (reservationId) {
+          try { await releaseStorageReservation(c.env, reservationId, userId); } catch (releaseError) { console.error('[uploads] reservation release failed:', releaseError); }
+        }
       }
       if (sagaId) {
-        try {
-          const message = String(error?.message || error || 'Upload failed');
-          await failSaga(c.env, sagaId, error, message.includes('remote') || message.includes('Postgres') || message.includes('database'));
-        } catch (sagaError) {
-          console.error('[uploads] failed to update upload saga:', sagaError);
-        }
+        try { await failSaga(c.env, sagaId, error, remoteSucceeded); } catch (sagaError) { console.error('[uploads] failed to update upload saga:', sagaError); }
       }
       return safeErrorResponse(c, error, 'Upload failed', 'UPLOAD_FAILED');
     }
