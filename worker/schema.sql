@@ -82,6 +82,12 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- The migration script reuses this schema against an already initialized Neon DB.
+-- CREATE TABLE IF NOT EXISTS does not add columns to pre-existing tables, so keep
+-- additive P2 columns idempotent here as well.
+ALTER TABLE upload_sessions
+  ADD COLUMN IF NOT EXISTS duplicate_policy TEXT NOT NULL DEFAULT 'rename';
+
 CREATE TABLE IF NOT EXISTS operation_sagas (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
