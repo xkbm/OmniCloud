@@ -101,3 +101,4 @@ jobs:
         run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/api/health
 
 # Trigger deployment for the current cloudflare-test revision.
+# The frontend drag-and-drop implementation is included in the checked-out revision.
