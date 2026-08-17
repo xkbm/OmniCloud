@@ -108,7 +108,7 @@ async function transferFileNode({ env, userId, source, destination, destinationP
   };
 }
 
-async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource }) {
+async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource, onProgress }) {
   if (nodes.length > MAX_RECURSIVE_TRANSFER_NODES) {
     throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
   }
@@ -123,6 +123,12 @@ async function transferTree({ env, userId, source, destination, destinationPath,
   const ordered = [...nodes].sort((a, b) => String(a.virtual_path || '').length - String(b.virtual_path || '').length || String(a.file_name).localeCompare(String(b.file_name)));
   const folderMap = new Map([[source.id, rootRemoteId]]);
   const results = [];
+  let completedBytes = 0;
+
+  const reportProgress = async (bytes) => {
+    if (typeof onProgress !== 'function') return;
+    await onProgress(completedBytes + Math.max(0, Number(bytes) || 0));
+  };
 
   for (const node of ordered) {
     const relativeVirtualPath = String(node.virtual_path || '').startsWith(`${sourceRootPath}/`) ? String(node.virtual_path || '').slice(sourceRootPath.length + 1) : '';
@@ -146,7 +152,9 @@ async function transferTree({ env, userId, source, destination, destinationPath,
     const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
     const parentRemoteId = parentNode ? folderMap.get(parentNode.id) : rootRemoteId;
     if (!parentRemoteId) throw Object.assign(new Error('Destination parent folder mapping is missing'), { status: 502, code: 'DESTINATION_PARENT_UNAVAILABLE' });
-    const result = await transferFileNode({ env, userId, source: node, destination, destinationPath: filePath, destinationParentId: parentRemoteId, deleteSource: false });
+    const result = await transferFileNode({ env, userId, source: node, destination, destinationPath: filePath, destinationParentId: parentRemoteId, deleteSource: false, onProgress: reportProgress });
+    completedBytes += Math.max(0, Number(node.size || result.size || 0));
+    await onProgress?.(completedBytes);
     results.push({ ...result, isFolder: false });
   }
 
@@ -162,7 +170,7 @@ async function transferTree({ env, userId, source, destination, destinationPath,
 export async function transferFile(options) {
   const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, nodes, onProgress } = options;
   if (source.is_folder) {
-    const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes: nodes || [source], deleteSource: true });
+    const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes: nodes || [source], deleteSource: true, onProgress });
     await onRemoteSuccess?.({ tree: result });
     return result;
   }
@@ -172,8 +180,8 @@ export async function transferFile(options) {
 }
 
 export async function transferFolder(options) {
-  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess } = options;
-  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, deleteSource: true });
+  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress } = options;
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: true, onProgress });
   await onRemoteSuccess?.({ tree: result });
   return result;
 }
@@ -187,8 +195,8 @@ export async function copyFile(options) {
 }
 
 export async function copyFolder(options) {
-  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess } = options;
-  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: false });
+  const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress } = options;
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: false, onProgress });
   await onRemoteSuccess?.({ tree: result });
   return result;
 }
