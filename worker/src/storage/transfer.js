@@ -87,12 +87,7 @@ async function transferTree({ env, userId, source, destination, destinationPath,
   const destinationAccount = accountFromRow(destination, userId);
   const sourceRootPath = `${String(source.virtual_path || '/').replace(/\/$/, '')}/${source.file_name}`.replace(/^\/+/, '/');
   const destinationRootPath = `${destinationPath === '/' ? '' : destinationPath}${source.file_name}/`.replace(/\/+/g, '/');
-  const rootFolder = await performCreateFolder(env, destinationAccount, {
-    name: source.file_name,
-    virtualPath: destinationPath,
-    remoteParentId: destinationParentId,
-  });
-
+  const rootFolder = await performCreateFolder(env, destinationAccount, { name: source.file_name, virtualPath: destinationPath, remoteParentId: destinationParentId });
   const rootRemoteId = rootFolder.remoteFileId;
   if (!rootRemoteId) throw Object.assign(new Error('Destination provider did not return a folder identifier'), { status: 502, code: 'DESTINATION_FOLDER_UNCONFIRMED' });
 
@@ -107,7 +102,7 @@ async function transferTree({ env, userId, source, destination, destinationPath,
       if (node.id === source.id) continue;
       const targetPath = `${destinationRootPath}${relativeVirtualPath}`.replace(/\/+/g, '/');
       const sourceParentPath = String(node.virtual_path || '/');
-      const parentNode = ordered.find((candidate) => candidate.is_folder && candidate.id !== node.id && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
+      const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
       const parentRemoteId = parentNode ? folderMap.get(parentNode.id) : rootRemoteId;
       if (!parentRemoteId) throw Object.assign(new Error('Destination parent folder mapping is missing'), { status: 502, code: 'DESTINATION_PARENT_UNAVAILABLE' });
       const created = await performCreateFolder(env, destinationAccount, { name: node.file_name, virtualPath: targetPath, remoteParentId: parentRemoteId });
@@ -122,11 +117,16 @@ async function transferTree({ env, userId, source, destination, destinationPath,
     const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
     const parentRemoteId = parentNode ? folderMap.get(parentNode.id) : rootRemoteId;
     if (!parentRemoteId) throw Object.assign(new Error('Destination parent folder mapping is missing'), { status: 502, code: 'DESTINATION_PARENT_UNAVAILABLE' });
-    const result = await transferFileNode({ env, userId, source: node, destination, destinationPath: filePath, destinationParentId: parentRemoteId, deleteSource });
+    const result = await transferFileNode({ env, userId, source: node, destination, destinationPath: filePath, destinationParentId: parentRemoteId, deleteSource: false });
     results.push({ ...result, isFolder: false });
   }
 
-  if (deleteSource) await performDelete(env, accountFromRow(source, userId), source);
+  if (deleteSource) {
+    for (const node of [...ordered].reverse()) {
+      await performDelete(env, accountFromRow(node, userId), node);
+    }
+  }
+
   return { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || null }, nodes: results };
 }
 
