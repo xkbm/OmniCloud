@@ -100,11 +100,11 @@ function isRemoteNotFound(error) {
   return status === 404 || /not[_ -]?found|does not exist|no such file|resource.*missing/i.test(String(error?.message || ''));
 }
 
-async function reconcileCrossAccountMove(env, db, saga) {
+async function reconcileTransferredMove(env, db, saga) {
   const payload = saga.payload || {};
   const destinationAccountId = payload.destinationAccountId;
   const destinationRemoteId = payload.destinationRemoteId;
-  if (!destinationAccountId || !destinationRemoteId) throw new Error('Cross-account move saga is missing destination metadata');
+  if (!destinationAccountId || !destinationRemoteId) throw new Error('Transfer move saga is missing destination metadata');
 
   const destinationAccountRows = await db`
     SELECT id,user_id,email,provider,encrypted_credentials,status,total_space,used_space
@@ -153,8 +153,8 @@ async function reconcileCrossAccountMove(env, db, saga) {
 }
 
 async function reconcileMove(env, db, saga) {
-  if (saga.payload?.crossAccount) {
-    await reconcileCrossAccountMove(env, db, saga);
+  if (saga.payload?.crossAccount || saga.payload?.transferFallback) {
+    await reconcileTransferredMove(env, db, saga);
     return;
   }
 
