@@ -33,6 +33,7 @@ jobs:
       - name: Check security-sensitive Worker syntax
         run: |
           node --check worker/src/index.js
+          node --check worker/transferScheduler.js
           node --check worker/src/auth.js
           node --check worker/src/crypto.js
           node --check worker/src/uploadProgress.js
@@ -40,6 +41,7 @@ jobs:
           node --check worker/src/storage/capabilities.js
           node --check worker/src/storage/jobs.js
           node --check worker/src/storage/pool.js
+          node --check worker/src/storage/runner.js
           node --check worker/src/storage/service.js
           node --check worker/src/storage/streams.js
           node --check worker/src/storage/transfer.js
@@ -80,7 +82,11 @@ jobs:
           grep -q "CREATE TABLE IF NOT EXISTS transfer_jobs" worker/migrations/2026-08-17-transfer-jobs.sql
           grep -q "transfer_jobs" worker/migrations/2026-08-17-transfer-jobs.sql
           grep -q "createTransferJob" worker/src/storage/jobs.js
-          grep -q "updateTransferJob" worker/src/storage/jobs.js
+          grep -q "claimNextTransferJob" worker/src/storage/jobs.js
+          grep -q "hasQueuedTransferJobs" worker/src/storage/jobs.js
+          grep -q "TransferScheduler" worker/transferScheduler.js
+          grep -q "TRANSFER_SCHEDULER" worker/wrangler.toml
+          grep -q "executorVersion" worker/src/storage/runner.js
 
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
