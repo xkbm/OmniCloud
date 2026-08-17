@@ -5,6 +5,7 @@ import TruncateMarquee from './TruncateMarquee.vue';
 import { formatBytes, formatDate, getModifiedTime, providerIcon, providerLabel } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
 import { api } from '../services/api';
+import '../utils/internalDragGuard.js';
 
 const props = defineProps({
 	item: { type: Object, required: true },
@@ -18,7 +19,6 @@ const emit = defineEmits(['select', 'open', 'contextmenu']);
 const isDragging = ref(false);
 const isDropTarget = ref(false);
 const dragMime = 'application/x-omnicloud-file';
-const dragSelectedMime = 'application/x-omnicloud-selected';
 
 const displayName = computed(() => {
 	if (props.nameField === 'display_name') {
@@ -27,7 +27,8 @@ const displayName = computed(() => {
 	return props.item[props.nameField] || '';
 });
 
-const canDrag = computed(() => props.item.provider === 'google_drive');
+const movableProviders = new Set(['google_drive', 'onedrive', 'dropbox', 'yandex', 's3']);
+const canDrag = computed(() => movableProviders.has(props.item.provider));
 const isInternalDrag = (event) => Boolean(event.dataTransfer?.types?.includes(dragMime));
 
 function handleClick(event) {
@@ -47,7 +48,6 @@ function handleDragStart(event) {
 	isDragging.value = true;
 	event.dataTransfer.effectAllowed = 'move';
 	event.dataTransfer.setData(dragMime, props.item.id);
-	event.dataTransfer.setData(dragSelectedMime, String(props.selected));
 	event.dataTransfer.setData('text/plain', props.item.file_name || '');
 }
 
@@ -59,7 +59,7 @@ function handleDragEnd() {
 function handleDragEnter(event) {
 	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
-	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	if (!props.item.is_folder || !canDrag.value) return;
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	event.preventDefault();
 	isDropTarget.value = true;
@@ -68,7 +68,7 @@ function handleDragEnter(event) {
 function handleDragOver(event) {
 	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
-	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	if (!props.item.is_folder || !canDrag.value) return;
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	event.preventDefault();
 	isDropTarget.value = true;
@@ -85,7 +85,7 @@ function handleDragLeave(event) {
 async function handleDrop(event) {
 	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
-	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	if (!props.item.is_folder || !canDrag.value) return;
 	event.preventDefault();
 	isDropTarget.value = false;
 
@@ -101,6 +101,7 @@ async function handleDrop(event) {
 		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-complete', {
 			detail: { sourceFileId, targetFolder: props.item },
 		}));
+		window.location.reload();
 	} catch (error) {
 		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-error', {
 			detail: { error },
