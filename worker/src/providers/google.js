@@ -187,6 +187,30 @@ export async function googleRename(env, account, fileId, name) {
   return jsonResponse(await googleFileRequest(env, account, fileId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }));
 }
 
+export async function googleMove(env, account, fileId, destinationParentId = 'root') {
+  if (!fileId) throw new Error('Google Drive file id is required');
+  const remote = await jsonResponse(await googleFileRequest(env, account, fileId, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    url: `${FILES_API}/${encodeURIComponent(fileId)}?fields=id,parents`,
+  }).catch(() => null));
+  const currentParents = Array.isArray(remote?.parents) ? remote.parents : [];
+  const params = new URLSearchParams({
+    addParents: destinationParentId || 'root',
+    fields: 'id,parents,name',
+  });
+  if (currentParents.length) params.set('removeParents', currentParents.join(','));
+  const credentials = await getGoogleCredentials(env, account);
+  const headers = new Headers({ Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' });
+  let response = await fetch(`${FILES_API}/${encodeURIComponent(fileId)}?${params.toString()}`, { method: 'PATCH', headers });
+  if (response.status === 401 && credentials.refreshToken) {
+    const refreshed = await refreshAccessToken(env, account, decryptJson(account.encrypted_credentials, credentialsSecret(env)));
+    headers.set('Authorization', `Bearer ${refreshed.accessToken}`);
+    response = await fetch(`${FILES_API}/${encodeURIComponent(fileId)}?${params.toString()}`, { method: 'PATCH', headers });
+  }
+  return jsonResponse(response);
+}
+
 export async function googleDelete(env, account, fileId) {
   return jsonResponse(await googleFileRequest(env, account, fileId, { method: 'DELETE' }));
 }
