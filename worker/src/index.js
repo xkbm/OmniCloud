@@ -18,6 +18,7 @@ import { moveRoutes } from './routes/move.js';
 import { settingsRoutes } from './routes/settings.js';
 import { storageRoutes } from './routes/storage.js';
 import { uploadsRoutes } from './routes/uploads.js';
+import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
 import { sql } from './db.js';
 
@@ -152,5 +153,5 @@ await uploadsRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 
-export { UploadProgress };
+export { TransferScheduler, UploadProgress };
 export default app;
