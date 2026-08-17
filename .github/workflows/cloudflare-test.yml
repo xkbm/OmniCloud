@@ -61,6 +61,8 @@ jobs:
           node --check worker/src/providers/googleReplace.js
           node --check worker/src/providers/duplicatePolicy.js
           node --check worker/src/utils/filePolicy.js
+          node --check worker/src/utils/fileNames.js
+          node --check worker/src/utils/storageErrors.js
           node --check worker/src/utils/sagas.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
@@ -74,6 +76,17 @@ jobs:
           grep -q "storage_reservations" worker/migrations/2026-08-17-storage-reservations.sql
           grep -q "reserveStorage" worker/src/routes/uploads.js
           grep -q "releaseStorageReservation" worker/src/routes/uploads.js
+
+      - name: Verify transient storage failover contract
+        run: |
+          grep -q "STORAGE_TRANSIENT" worker/src/utils/storageErrors.js
+          grep -q "429, 502, 503, 504" worker/src/utils/storageErrors.js
+          grep -q "isTransientStorageError" worker/src/routes/uploads.js
+          grep -q "excludeBackendIds" worker/src/routes/uploads.js
+          grep -q "excludeBackendIds" worker/src/storage/service.js
+          grep -q "excludedBackendIds" worker/src/storage/pool.js
+          grep -q "STORAGE_TRANSIENT" frontend/src/services/api.js
+          grep -q "retryCount" frontend/src/stores/uploadQueue.js
 
       - name: Verify virtual folder namespace contract
         run: |
