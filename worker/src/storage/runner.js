@@ -71,19 +71,28 @@ export async function runTransferJob(env, job) {
       await updateSaga(env, sagaId, 'remote_succeeded', remote);
     };
 
+    const onProgress = async (bytesCompleted) => {
+      await updateTransferJob(env, job.user_id, job.id, {
+        status: 'running',
+        completedNodes: 0,
+        bytesCompleted: Math.max(0, Math.min(Number(job.bytes_total || source.size || 0), Math.floor(Number(bytesCompleted) || 0))),
+      });
+    };
+
     const result = copy
-      ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess })
-      : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess });
+      ? await copyFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress })
+      : await transferFile({ env, userId: job.user_id, source, destination, destinationPath, destinationParentId, onRemoteSuccess, onProgress });
 
     const destinationRemoteId = result.destinationRemoteId || result.remoteFileId || result.id;
     if (!destinationRemoteId) {
       throw Object.assign(new Error('Transfer completed without a destination identifier'), { code: 'DESTINATION_ID_MISSING', status: 502 });
     }
 
+    const bytes = Number(result.size || source.size || 0);
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'verifying',
       completedNodes: 0,
-      bytesCompleted: 0,
+      bytesCompleted: bytes,
       payload: { remoteResult: result, destinationRemoteId, sagaId },
     });
 
@@ -93,7 +102,7 @@ export async function runTransferJob(env, job) {
       INSERT INTO file_metadata
         (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
       VALUES
-        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(destinationRemoteId)},${result.destinationParentId || destinationParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+        (${newId},${job.user_id},${result.destinationPath || destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${bytes},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(destinationRemoteId)},${result.destinationParentId || destinationParentId || null},${result.createdTime || null},${result.modifiedTime || null})
       ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
         virtual_path=EXCLUDED.virtual_path,
         file_name=EXCLUDED.file_name,
@@ -107,7 +116,6 @@ export async function runTransferJob(env, job) {
     `;
 
     await completeSaga(env, sagaId);
-    const bytes = Number(result.size || source.size || 0);
     if (reservationId) await releaseStorageReservation(env, reservationId, job.user_id);
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'completed',
