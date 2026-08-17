@@ -118,6 +118,18 @@ export const api = {
 			body: JSON.stringify({ ids: fileIds }),
 		});
 	},
+	listTransfers(limit = 25) {
+		const query = new URLSearchParams({ limit: String(limit) }).toString();
+		return request(`/transfers?${query}`);
+	},
+	getTransfer(transferId) {
+		return request(`/transfers/${encodeURIComponent(transferId)}`);
+	},
+	cancelTransfer(transferId) {
+		return request(`/transfers/${encodeURIComponent(transferId)}/cancel`, {
+			method: 'POST',
+		});
+	},
 	getGoogleIntegrationStatus() {
 		return request('/accounts/google/status');
 	},
