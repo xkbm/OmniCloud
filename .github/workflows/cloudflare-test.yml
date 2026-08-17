@@ -39,6 +39,7 @@ jobs:
           node --check worker/src/uploadProgress.js
           node --check worker/src/storage/backend.js
           node --check worker/src/storage/capabilities.js
+          node --check worker/src/storage/health.js
           node --check worker/src/storage/jobs.js
           node --check worker/src/storage/pool.js
           node --check worker/src/storage/runner.js
@@ -97,6 +98,10 @@ jobs:
           grep -q "placementBackends" worker/src/storage/pool.js
           grep -q "placementHealthy" worker/src/storage/backend.js
           grep -q "health_status" worker/src/storage/service.js
+          grep -q "probeStorageAccount" worker/src/storage/service.js
+          grep -q "probeAllStorageAccounts" worker/src/storage/service.js
+          grep -q "scheduled" worker/src/index.js
+          grep -q 'crons = ["*/5 * * * *"]' worker/wrangler.toml
 
       - name: Verify virtual folder namespace contract
         run: |
