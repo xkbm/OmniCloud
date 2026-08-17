@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   total_space BIGINT NOT NULL,
   used_space BIGINT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'invalid_token')),
+  health_status TEXT NOT NULL DEFAULT 'healthy' CHECK (health_status IN ('healthy', 'degraded', 'offline', 'reauth_required')),
+  health_checked_at TIMESTAMPTZ,
+  health_failure_count INTEGER NOT NULL DEFAULT 0 CHECK (health_failure_count >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -146,6 +149,7 @@ CREATE TABLE IF NOT EXISTS operation_sagas (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_accounts_user_provider_email ON cloud_accounts(user_id, provider, email);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id ON cloud_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_accounts_health ON cloud_accounts(user_id, health_status, health_checked_at);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
 CREATE INDEX IF NOT EXISTS idx_file_virtual_path ON file_metadata(user_id, virtual_path);
