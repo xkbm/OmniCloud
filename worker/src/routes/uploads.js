@@ -39,6 +39,25 @@ async function sendProgress(c, uploadId, uploaded, total) {
   }).catch(() => {}));
 }
 
+async function resolveVirtualFolderAccount(db, userId, virtualPath) {
+  if (!virtualPath || virtualPath === '/') return null;
+  const normalized = normalizeVirtualPath(virtualPath);
+  const trimmed = normalized.replace(/^\/+|\/+$/g, '');
+  const parts = trimmed.split('/').filter(Boolean);
+  const fileName = parts.pop();
+  const parentPath = parts.length ? `/${parts.join('/')}/` : '/';
+  const rows = await db`
+    SELECT cloud_account_id
+    FROM file_metadata
+    WHERE user_id=${userId}
+      AND is_folder=TRUE
+      AND virtual_path=${parentPath}
+      AND file_name=${fileName}
+    LIMIT 1
+  `;
+  return rows[0]?.cloud_account_id || null;
+}
+
 export async function uploadsRoutes(app) {
   app.post('/api/uploads/initiate', async (c) => {
     let reservationId = null;
@@ -51,7 +70,7 @@ export async function uploadsRoutes(app) {
       const size = Number(body.size || 0);
       const mimeInput = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
       const virtualPath = normalizeVirtualPath(body.virtualPath || body.virtual_path || '/');
-      const remoteParentId = body.remoteParentId || body.remote_parent_id || null;
+      const requestedRemoteParentId = body.remoteParentId || body.remote_parent_id || null;
       const duplicatePolicy = normalizeDuplicatePolicy(body.duplicatePolicy || body.duplicate_policy);
       const maxFileSize = getMaxFileSize(c.env);
 
@@ -66,16 +85,15 @@ export async function uploadsRoutes(app) {
       if (!selected) return c.json({ error: requested ? 'Requested storage account is not active' : 'No storage backend has enough healthy capacity for this file', code: requested ? 'INVALID_STORAGE_BACKEND' : 'NO_STORAGE_CAPACITY' }, 409);
 
       const accounts = await db`
-        SELECT *
-        FROM cloud_accounts
-        WHERE id=${selected.id}
-          AND user_id=${user.id}
-          AND status='active'
+        SELECT * FROM cloud_accounts
+        WHERE id=${selected.id} AND user_id=${user.id} AND status='active'
         LIMIT 1
       `;
       const account = accounts[0] || null;
       if (!account) return c.json({ error: 'Selected storage backend is no longer active', code: 'STORAGE_BACKEND_UNAVAILABLE' }, 409);
 
+      const folderAccountId = await resolveVirtualFolderAccount(db, user.id, virtualPath);
+      const remoteParentId = folderAccountId === account.id ? requestedRemoteParentId : null;
       const resolved = await resolveUploadFileName(c.env, account, { fileName, virtualPath, remoteParentId, duplicatePolicy });
       const id = crypto.randomUUID();
 
@@ -172,10 +190,7 @@ export async function uploadsRoutes(app) {
               controller.enqueue(value);
               if (uploaded - lastReported >= 1024 * 1024 || (total && uploaded >= total)) { lastReported = uploaded; await sendProgress(c, uploadId, uploaded, total); }
             }
-            if (uploaded !== expectedSize) {
-              controller.error(Object.assign(new Error('Uploaded content size does not match declared file size'), { code: 'UPLOAD_SIZE_MISMATCH' }));
-              return;
-            }
+            if (uploaded !== expectedSize) { controller.error(Object.assign(new Error('Uploaded content size does not match declared file size'), { code: 'UPLOAD_SIZE_MISMATCH' })); return; }
             controller.close();
           } catch (error) { controller.error(error); }
           finally { reader.releaseLock(); }
