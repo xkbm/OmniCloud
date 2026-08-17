@@ -36,10 +36,27 @@ jobs:
           node --check worker/src/auth.js
           node --check worker/src/crypto.js
           node --check worker/src/uploadProgress.js
+          node --check worker/src/routes/accounts.js
           node --check worker/src/routes/files.js
           node --check worker/src/routes/uploads.js
           node --check worker/src/routes/google.js
+          node --check worker/src/providers/storage.js
+          node --check worker/src/providers/google.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
+
+      - name: Prepare legacy adapters
+        run: npm run prepare:legacy
+        working-directory: worker
+
+      - name: Verify generated legacy provider imports
+        run: |
+          node --check worker/src/providers/legacy.js
+          node --check worker/generated/adapters/DropboxAdapter.js
+          node --check worker/generated/adapters/OneDriveAdapter.js
+          node --check worker/generated/adapters/YandexAdapter.js
+          node --check worker/generated/adapters/PCloudAdapter.js
+          node --check worker/generated/adapters/S3Adapter.js
+          node --check worker/generated/adapters/MegaAdapter.js
 
       - name: Build frontend
         run: npm run build
