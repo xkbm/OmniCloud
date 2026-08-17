@@ -24,6 +24,16 @@ test('StorageBackend computes free space and health from account state', () => {
   assert.equal(item.canStore(81), false);
 });
 
+test('StorageBackend exposes conservative provider move capabilities', () => {
+  assert.equal(backend({ provider: 'google_drive' }).canNativeMove(), true);
+  assert.equal(backend({ provider: 'dropbox' }).canNativeMove(), true);
+  assert.equal(backend({ provider: 'onedrive' }).canNativeMove(), true);
+  assert.equal(backend({ provider: 'yandex' }).canNativeMove(), true);
+  assert.equal(backend({ provider: 's3' }).canNativeMove(), true);
+  assert.equal(backend({ provider: 'pcloud' }).canNativeMove(), false);
+  assert.equal(backend({ provider: 'mega' }).canNativeMove(), false);
+});
+
 test('StoragePool aggregates only active storage backends', () => {
   const pool = new StoragePool([
     backend({ id: 'a', total_space: 100, used_space: 25, status: 'active' }),
