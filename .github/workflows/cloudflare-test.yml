@@ -88,6 +88,9 @@ jobs:
           grep -q "ensureVirtualFolder" worker/src/routes/uploads.js
           grep -q "getVirtualFolderMaterialization" worker/src/routes/uploads.js
           grep -q "upsertVirtualFolderMaterialization" worker/src/routes/uploads.js
+          grep -q "performRename" worker/src/routes/virtualFolders.js
+          grep -q "virtualFolderId" worker/src/routes/virtualFolders.js
+          grep -q "virtualFolderId" worker/src/utils/sagas.js
 
       - name: Verify unified copy contract
         run: |
