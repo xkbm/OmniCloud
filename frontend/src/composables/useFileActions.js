@@ -212,10 +212,21 @@ export function useFileActions({
 
 	async function handleDragMoveEvent(event) {
 		const detail = event.detail || {};
-		const sourceFile = detail.sourceFile;
+		const sourceFileId = detail.sourceFileId;
 		const targetFolder = detail.targetFolder;
-		if (!sourceFile || !targetFolder?.is_folder) return;
-		if (sourceFile.provider !== 'google_drive' || targetFolder.provider !== 'google_drive') {
+		if (!sourceFileId || !targetFolder?.is_folder) return;
+		if (targetFolder.provider !== 'google_drive') {
+			errorRef.value = 'Mover archivos actualmente solo está disponible para Google Drive.';
+			return;
+		}
+
+		const files = sourceList?.value || sourceList || [];
+		const sourceFile = files.find?.((file) => file.id === sourceFileId) || null;
+		if (!sourceFile) {
+			errorRef.value = 'No se pudo identificar el archivo arrastrado.';
+			return;
+		}
+		if (sourceFile.provider !== 'google_drive') {
 			errorRef.value = 'Mover archivos actualmente solo está disponible para Google Drive.';
 			return;
 		}
