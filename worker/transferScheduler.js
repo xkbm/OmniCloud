@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { claimNextTransferJob, updateTransferJob } from './src/storage/jobs.js';
+import { claimNextTransferJob, hasQueuedTransferJobs } from './src/storage/jobs.js';
 import { runTransferJob, failTransferJob } from './src/storage/runner.js';
 
 const ALARM_DELAY_MS = 1000;
@@ -36,13 +36,7 @@ export class TransferScheduler extends DurableObject {
       await failTransferJob(this.env, job, error);
     }
 
-    const db = await claimNextTransferJob(this.env);
-    if (db) {
-      await updateTransferJob(this.env, db.user_id, db.id, {
-        status: 'queued',
-        errorCode: null,
-        errorMessage: null,
-      });
+    if (await hasQueuedTransferJobs(this.env)) {
       await this.ctx.storage.setAlarm(Date.now() + ALARM_DELAY_MS);
     }
   }
