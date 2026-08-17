@@ -11,6 +11,9 @@ AUTH_SESSION_TTL_HOURS = "336"
 # Raise this only when the Cloudflare account/zone limit has also been raised.
 MAX_FILE_SIZE = "104857600"
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [[durable_objects.bindings]]
 name = "UPLOAD_PROGRESS"
 class_name = "UploadProgress"
