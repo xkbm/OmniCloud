@@ -27,9 +27,8 @@ const displayName = computed(() => {
   return props.item[props.nameField] || '';
 });
 
-const movableProviders = new Set(['google_drive', 'onedrive', 'dropbox', 'yandex', 's3', 'mega', 'pcloud']);
-const canDrag = computed(() => movableProviders.has(props.item.provider));
-const canDrop = computed(() => props.item.is_folder && movableProviders.has(props.item.provider));
+const canDrag = computed(() => props.item?.capabilities?.move !== false);
+const canDrop = computed(() => props.item.is_folder && props.item?.capabilities?.move !== false);
 const isInternalDrag = (event) => Boolean(event.dataTransfer?.types?.includes(dragMime));
 
 function handleClick(event) { emit('select', event); }
