@@ -1,6 +1,7 @@
 import { requireUser, sql } from '../db.js';
 import { getProviderCapabilities } from '../storage/capabilities.js';
 import { createTransferJob } from '../storage/jobs.js';
+import { MAX_RECURSIVE_TRANSFER_NODES } from '../storage/transfer.js';
 import { releaseStorageReservation, reserveStorage } from '../storage/service.js';
 
 const DEFAULT_THRESHOLD_BYTES = 50 * 1024 * 1024;
@@ -48,7 +49,7 @@ export async function backgroundMoveRoutes(app) {
     const db = sql(c.env);
     const source = await findSource(db, user.id, c.req.param('id'));
 
-    if (!source || source.is_folder || source.account_status !== 'active') return next();
+    if (!source || source.account_status !== 'active') return next();
 
     const destination = await findDestination(db, user.id, body);
     if (!destination || destination.destination_account_status !== 'active') return next();
@@ -58,13 +59,38 @@ export async function backgroundMoveRoutes(app) {
     const transferFallback = !nativeMoveSupported;
     const requiresTransfer = crossAccount || transferFallback;
 
-    if (!requiresTransfer || Number(source.size || 0) < threshold(c.env)) return next();
+    if (!requiresTransfer) return next();
 
     const destinationPath = normalizePath(`${destination.virtual_path || '/'}${destination.file_name}`);
+    let nodes = null;
+    let bytesTotal = Number(source.size || 0);
+    let totalNodes = 1;
+
+    if (source.is_folder) {
+      const sourceRootPath = normalizePath(`${source.virtual_path || '/'}${source.file_name}`);
+      nodes = await db`
+        SELECT fm.*, ca.provider, ca.status AS account_status
+        FROM file_metadata fm
+        JOIN cloud_accounts ca ON ca.id=fm.cloud_account_id
+        WHERE fm.user_id=${user.id}
+          AND (fm.id=${source.id} OR fm.virtual_path=${sourceRootPath} OR fm.virtual_path LIKE ${`${sourceRootPath}%`})
+        ORDER BY fm.is_folder DESC, char_length(fm.virtual_path), fm.file_name
+        LIMIT ${MAX_RECURSIVE_TRANSFER_NODES + 1}
+      `;
+      if (nodes.length > MAX_RECURSIVE_TRANSFER_NODES) {
+        return c.json({ error: `Folder contains too many items for a background transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`, code: 'FOLDER_TRANSFER_TOO_LARGE' }, 409);
+      }
+      if (!nodes.some((row) => row.id === source.id)) nodes.unshift(source);
+      totalNodes = nodes.length;
+      bytesTotal = nodes.reduce((sum, node) => sum + Math.max(0, Number(node.size || 0)), 0);
+    } else if (bytesTotal < threshold(c.env)) {
+      return next();
+    }
+
     const reservation = await reserveStorage(c.env, {
       userId: user.id,
       accountId: destination.cloud_account_id,
-      bytes: Number(source.size || 0),
+      bytes: bytesTotal,
       uploadId: `transfer:${source.id}:${crypto.randomUUID()}`,
     });
 
@@ -74,12 +100,13 @@ export async function backgroundMoveRoutes(app) {
         operation: 'move',
         sourceFileId: source.id,
         destinationFolderId: destination.id,
-        totalNodes: 1,
-        bytesTotal: Number(source.size || 0),
+        totalNodes,
+        bytesTotal,
         payload: {
           executorVersion: 'v1',
           crossAccount,
           transferFallback,
+          recursive: Boolean(source.is_folder),
           sourceAccountId: source.cloud_account_id,
           destinationAccountId: destination.cloud_account_id,
           destinationRemoteParentId: destination.remote_file_id || 'root',
@@ -92,6 +119,7 @@ export async function backgroundMoveRoutes(app) {
         data: {
           accepted: true,
           background: true,
+          recursive: Boolean(source.is_folder),
           transferJobId: job.id,
           file: { id: source.id, virtual_path: destinationPath },
         },
