@@ -78,15 +78,31 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   remote_parent_id TEXT,
   duplicate_policy TEXT NOT NULL DEFAULT 'rename',
   status TEXT NOT NULL DEFAULT 'pending',
+  reservation_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- The migration script reuses this schema against an already initialized Neon DB.
--- CREATE TABLE IF NOT EXISTS does not add columns to pre-existing tables, so keep
--- additive P2 columns idempotent here as well.
 ALTER TABLE upload_sessions
   ADD COLUMN IF NOT EXISTS duplicate_policy TEXT NOT NULL DEFAULT 'rename';
+ALTER TABLE upload_sessions
+  ADD COLUMN IF NOT EXISTS reservation_id TEXT;
+
+CREATE TABLE IF NOT EXISTS storage_reservations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cloud_account_id TEXT NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+  bytes BIGINT NOT NULL CHECK (bytes > 0),
+  upload_id TEXT UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('active', 'released')) DEFAULT 'active',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE upload_sessions
+  ADD CONSTRAINT fk_upload_sessions_reservation
+  FOREIGN KEY (reservation_id) REFERENCES storage_reservations(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS operation_sagas (
   id TEXT PRIMARY KEY,
@@ -122,6 +138,12 @@ CREATE INDEX IF NOT EXISTS idx_upload_sessions_user_id
   ON upload_sessions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_policy
   ON upload_sessions(duplicate_policy, status);
+CREATE INDEX IF NOT EXISTS idx_upload_sessions_reservation
+  ON upload_sessions(reservation_id);
+CREATE INDEX IF NOT EXISTS idx_storage_reservations_account_active
+  ON storage_reservations(cloud_account_id, status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_storage_reservations_user_status
+  ON storage_reservations(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_operation_sagas_status
   ON operation_sagas(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_sagas_user
