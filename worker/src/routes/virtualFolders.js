@@ -1,13 +1,16 @@
 import { requireUser, sql } from '../db.js';
-import { performCreateFolder } from '../providers/storage.js';
+import { performCreateFolder, performRename } from '../providers/storage.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 import { chooseStorageBackend } from '../storage/service.js';
 import { ensureVirtualFolder, upsertVirtualFolderMaterialization } from '../storage/virtualFolders.js';
+import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
-function errorResponse(c, error) {
+function errorResponse(c, error, fallback = 'Folder operation failed', code = 'FOLDER_OPERATION_FAILED') {
   if (error instanceof Response) return error;
   console.error('[virtual-folders] request failed:', error);
-  return c.json({ error: 'Folder creation failed', code: error?.code || 'FOLDER_CREATE_FAILED' }, 500);
+  const requestedStatus = Number(error?.status);
+  const status = [400, 404, 409].includes(requestedStatus) ? requestedStatus : 500;
+  return c.json({ error: fallback, code: error?.code || code }, status);
 }
 
 export async function virtualFolderRoutes(app) {
@@ -98,7 +101,140 @@ export async function virtualFolderRoutes(app) {
         },
       }, 201);
     } catch (error) {
-      return errorResponse(c, error);
+      return errorResponse(c, error, 'Folder creation failed', 'FOLDER_CREATE_FAILED');
+    }
+  });
+
+  app.patch('/api/files/:id/rename', async (c, next) => {
+    const sagaIds = [];
+    try {
+      const user = await requireUser(c);
+      const body = await c.req.json();
+      const name = sanitizeFileName(String(body.name || ''), { fallback: '' });
+      if (!name) return c.json({ error: 'New name is required', code: 'INVALID_NAME' }, 400);
+
+      const db = sql(c.env);
+      const folderRows = await db`
+        SELECT * FROM virtual_folders
+        WHERE id=${c.req.param('id')} AND user_id=${user.id}
+        LIMIT 1
+      `;
+      const folder = folderRows[0];
+      if (!folder) return next();
+
+      const oldPath = normalizeVirtualPath(folder.path);
+      const newPath = normalizeVirtualPath(`${folder.parent_path}${name}`);
+      if (newPath === oldPath) return c.json({ data: { success: true, virtualFolderId: folder.id, name, virtualPath: oldPath } });
+
+      const collision = await db`
+        SELECT id FROM virtual_folders
+        WHERE user_id=${user.id} AND path=${newPath} AND id<>${folder.id}
+        LIMIT 1
+      `;
+      if (collision[0]) return c.json({ error: 'A folder with that name already exists', code: 'DUPLICATE_FOLDER_NAME' }, 409);
+
+      const materializations = await db`
+        SELECT vfm.*, ca.email, ca.provider, ca.encrypted_credentials,
+               ca.total_space, ca.used_space, ca.status
+        FROM virtual_folder_materializations vfm
+        JOIN cloud_accounts ca ON ca.id=vfm.cloud_account_id AND ca.user_id=vfm.user_id
+        WHERE vfm.virtual_folder_id=${folder.id}
+          AND vfm.user_id=${user.id}
+          AND vfm.status='active'
+          AND ca.status='active'
+        ORDER BY ca.created_at ASC, ca.id ASC
+      `;
+
+      for (const materialization of materializations) {
+        const sagaId = await startSaga(c.env, {
+          userId: user.id,
+          accountId: materialization.cloud_account_id,
+          operation: 'rename',
+          payload: {
+            virtualFolderId: folder.id,
+            virtualFolderName: folder.name,
+            oldPath,
+            newPath,
+            newName: name,
+            materializationId: materialization.id,
+            remoteFileId: materialization.remote_file_id,
+          },
+        });
+        sagaIds.push(sagaId);
+
+        const account = {
+          id: materialization.cloud_account_id,
+          user_id: user.id,
+          email: materialization.email,
+          provider: materialization.provider,
+          encrypted_credentials: materialization.encrypted_credentials,
+          total_space: materialization.total_space,
+          used_space: materialization.used_space,
+          status: materialization.status,
+        };
+        await performRename(c.env, account, {
+          id: materialization.remote_file_id,
+          user_id: user.id,
+          file_name: folder.name,
+          is_folder: true,
+          cloud_account_id: materialization.cloud_account_id,
+          remote_file_id: materialization.remote_file_id,
+          remote_parent_id: materialization.remote_parent_id,
+        }, name);
+
+        await updateSaga(c.env, sagaId, 'remote_succeeded', {
+          remoteFileId: materialization.remote_file_id,
+          virtualFolderId: folder.id,
+          oldPath,
+          newPath,
+          newName: name,
+        });
+      }
+
+      const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`;
+      const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`;
+
+      await db`
+        UPDATE virtual_folders
+        SET
+          path=CASE WHEN id=${folder.id} THEN ${newPath} ELSE ${newPrefix} || substring(path from ${oldPrefix.length + 1}) END,
+          parent_path=CASE WHEN id=${folder.id} THEN ${folder.parent_path} ELSE ${newPrefix} || substring(parent_path from ${oldPrefix.length + 1}) END,
+          name=CASE WHEN id=${folder.id} THEN ${name} ELSE name END,
+          updated_at=NOW()
+        WHERE user_id=${user.id}
+          AND (id=${folder.id} OR left(path,char_length(${oldPrefix}))=${oldPrefix})
+      `;
+
+      await db`
+        UPDATE file_metadata
+        SET
+          virtual_path=CASE
+            WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name} THEN ${folder.parent_path}
+            ELSE ${newPrefix} || substring(virtual_path from ${oldPrefix.length + 1})
+          END,
+          file_name=CASE
+            WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name} THEN ${name}
+            ELSE file_name
+          END,
+          updated_at=NOW()
+        WHERE user_id=${user.id}
+          AND (
+            (is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name})
+            OR left(virtual_path,char_length(${oldPrefix}))=${oldPrefix}
+          )
+      `;
+
+      for (const sagaId of sagaIds) await completeSaga(c.env, sagaId);
+      return c.json({ data: { success: true, virtualFolderId: folder.id, name, virtualPath: newPath } });
+    } catch (error) {
+      for (const sagaId of sagaIds) {
+        try {
+          await failSaga(c.env, sagaId, error, true);
+        } catch (sagaError) {
+          console.error('[virtual-folders] failed to mark rename saga for reconciliation:', sagaError);
+        }
+      }
+      return errorResponse(c, error, 'Rename failed', 'RENAME_FAILED');
     }
   });
 }
