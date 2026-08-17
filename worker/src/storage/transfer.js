@@ -86,6 +86,13 @@ export async function transferFile({ env, userId, source, destination, destinati
     sourceRemoteId: source.remote_file_id,
     destinationRemoteId: String(remoteId),
     destinationAccountId: destination.cloud_account_id,
+    destinationPath,
+    destinationParentId: destinationParentId === 'root' ? null : destinationParentId,
+    fileName: destinationRow.file_name,
+    mimeType: destinationRow.mime_type,
+    size: actualSize,
+    createdTime: verified?.createdTime || verified?.created_time || null,
+    modifiedTime: verified?.modifiedTime || verified?.modified_time || null,
     verifiedSize: actualSize,
   });
 
