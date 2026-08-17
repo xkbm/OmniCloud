@@ -1,7 +1,7 @@
-import { requireUser, sql } from '../db.js';
 import { performMove } from '../providers/storage.js';
-import { transferFile as transferCrossBackend } from '../storage/transfer.js';
+import { transferFile as transferCrossBackend, transferFolder as transferFolderCrossBackend, MAX_RECURSIVE_TRANSFER_NODES } from '../storage/transfer.js';
 import { getProviderCapabilities } from '../storage/capabilities.js';
+import { requireUser, sql } from '../db.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
 
 function normalizePath(input = '/') {
@@ -29,15 +29,8 @@ function accountFromRow(row, userId) {
 }
 
 async function resolveDestination(db, userId, source, body) {
-  const destinationId = String(
-    body.destination_folder_id ||
-    body.target_folder_id ||
-    body.destinationFolderId ||
-    body.targetFolderId ||
-    '',
-  ).trim();
+  const destinationId = String(body.destination_folder_id || body.target_folder_id || body.destinationFolderId || body.targetFolderId || '').trim();
   const requestedPath = body.virtual_path ?? body.virtualPath ?? null;
-
   let destination = null;
   let destinationPath = '/';
 
@@ -123,9 +116,25 @@ export async function moveRoutes(app) {
       const transferFallback = !crossAccount && !nativeMoveSupported;
       const transferOperation = crossAccount || transferFallback;
       const transferDestination = destination || source;
+      let treeNodes = null;
 
-      if (transferFallback && source.is_folder) {
-        return c.json({ error: 'Moving folders on this storage backend requires recursive transfer and is not available yet', code: 'FOLDER_TRANSFER_UNSUPPORTED' }, 409);
+      if (transferOperation && source.is_folder) {
+        const sourceRootPath = normalizePath(`${currentParentPath}${source.file_name}`);
+        const descendantRows = await db`
+          SELECT fm.*, ca.provider, ca.email, ca.encrypted_credentials,
+            ca.status AS account_status, ca.total_space, ca.used_space
+          FROM file_metadata fm
+          JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+          WHERE fm.user_id = ${user.id}
+            AND (fm.id = ${source.id} OR fm.virtual_path = ${sourceRootPath} OR fm.virtual_path LIKE ${`${sourceRootPath}%`})
+          ORDER BY fm.is_folder DESC, char_length(fm.virtual_path), fm.file_name
+          LIMIT ${MAX_RECURSIVE_TRANSFER_NODES + 1}
+        `;
+        if (descendantRows.length > MAX_RECURSIVE_TRANSFER_NODES) {
+          return c.json({ error: `Folder contains too many items for an interactive transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`, code: 'FOLDER_TRANSFER_TOO_LARGE' }, 409);
+        }
+        treeNodes = descendantRows;
+        if (!treeNodes.some((row) => row.id === source.id)) treeNodes.unshift(source);
       }
 
       sagaId = await startSaga(c.env, {
@@ -149,46 +158,71 @@ export async function moveRoutes(app) {
       });
 
       if (transferOperation) {
-        const result = await transferCrossBackend({
-          env: c.env,
-          userId: user.id,
-          source,
-          destination: transferDestination,
-          destinationPath,
-          destinationParentId,
-          onRemoteSuccess: async (remote) => {
-            remoteSucceeded = true;
-            await updateSaga(c.env, sagaId, 'remote_succeeded', remote);
-          },
-        });
+        const result = source.is_folder
+          ? await transferFolderCrossBackend({
+              env: c.env,
+              userId: user.id,
+              source,
+              destination: transferDestination,
+              destinationPath,
+              destinationParentId,
+              nodes: treeNodes,
+              onRemoteSuccess: async (remote) => {
+                remoteSucceeded = true;
+                await updateSaga(c.env, sagaId, 'remote_succeeded', remote);
+              },
+            })
+          : await transferCrossBackend({
+              env: c.env,
+              userId: user.id,
+              source,
+              destination: transferDestination,
+              destinationPath,
+              destinationParentId,
+              onRemoteSuccess: async (remote) => {
+                remoteSucceeded = true;
+                await updateSaga(c.env, sagaId, 'remote_succeeded', remote);
+              },
+            });
 
-        const newId = crypto.randomUUID();
-        await db`
-          INSERT INTO file_metadata
-            (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
-          VALUES
-            (${newId},${user.id},${destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${transferDestination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
-          ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
-            virtual_path=EXCLUDED.virtual_path,
-            file_name=EXCLUDED.file_name,
-            is_starred=EXCLUDED.is_starred,
-            size=EXCLUDED.size,
-            mime_type=EXCLUDED.mime_type,
-            remote_parent_id=EXCLUDED.remote_parent_id,
-            remote_created_time=EXCLUDED.remote_created_time,
-            remote_modified_time=EXCLUDED.remote_modified_time,
-            updated_at=NOW()
-        `;
-        await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${user.id}`;
+        const nodes = source.is_folder ? [result.root, ...result.nodes] : [result];
+        for (const node of nodes) {
+          const original = treeNodes?.find((row) => row.id === node.sourceId) || source;
+          await db`
+            INSERT INTO file_metadata
+              (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+            VALUES
+              (${crypto.randomUUID()},${user.id},${node.destinationPath},${node.fileName},${Boolean(node.isFolder)},${Boolean(original.is_starred)},${Number(node.size || 0)},${node.mimeType || original.mime_type || null},${transferDestination.cloud_account_id},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null})
+            ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+              virtual_path=EXCLUDED.virtual_path,
+              file_name=EXCLUDED.file_name,
+              is_folder=EXCLUDED.is_folder,
+              is_starred=EXCLUDED.is_starred,
+              size=EXCLUDED.size,
+              mime_type=EXCLUDED.mime_type,
+              remote_parent_id=EXCLUDED.remote_parent_id,
+              remote_created_time=EXCLUDED.remote_created_time,
+              remote_modified_time=EXCLUDED.remote_modified_time,
+              updated_at=NOW()
+          `;
+        }
+
+        if (source.is_folder) {
+          await db`
+            DELETE FROM file_metadata
+            WHERE user_id=${user.id}
+              AND (id=${source.id} OR virtual_path = ${normalizePath(`${currentParentPath}${source.file_name}`)} OR virtual_path LIKE ${`${normalizePath(`${currentParentPath}${source.file_name}`)}%`})
+          `;
+        } else {
+          await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${user.id}`;
+        }
+
         await completeSaga(c.env, sagaId);
-        return c.json({ data: { success: true, transferred: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: transferDestination.cloud_account_id } } });
+        return c.json({ data: { success: true, transferred: true, recursive: source.is_folder, file: { id: source.id, virtual_path: destinationPath, cloud_account_id: transferDestination.cloud_account_id } } });
       }
 
       const account = accountFromRow(source, user.id);
-      const moved = await performMove(c.env, account, source, {
-        remoteParentId: destinationParentId,
-        virtualPath: destinationPath,
-      });
+      const moved = await performMove(c.env, account, source, { remoteParentId: destinationParentId, virtualPath: destinationPath });
       remoteSucceeded = true;
 
       await updateSaga(c.env, sagaId, 'remote_succeeded', {
