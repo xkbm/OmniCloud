@@ -111,5 +111,5 @@ export async function moveRoutes(app) {
     }
   });
 
-  // deployment marker
+  // deployment marker: drag-and-drop move
 }
