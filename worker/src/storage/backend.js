@@ -1,14 +1,4 @@
-const DEFAULT_CAPABILITIES = Object.freeze({
-  upload: true,
-  download: true,
-  move: false,
-  rename: true,
-  delete: true,
-  folders: true,
-  streaming: true,
-  serverSideCopy: false,
-  checksum: false,
-});
+import { getProviderCapabilities, PROVIDER_CAPABILITIES } from './capabilities.js';
 
 export const PROVIDER_LABELS = Object.freeze({
   google_drive: 'Google Drive',
@@ -31,7 +21,7 @@ export class StorageBackend {
     this.usedSpace = Math.max(0, Number(account.used_space ?? account.usedSpace ?? 0));
     this.freeSpace = Math.max(0, this.totalSpace - this.usedSpace);
     this.capabilities = {
-      ...DEFAULT_CAPABILITIES,
+      ...getProviderCapabilities(this.provider),
       ...(account.capabilities || {}),
     };
   }
@@ -71,3 +61,5 @@ export class StorageBackend {
 export function createStorageBackend(account) {
   return new StorageBackend(account);
 }
+
+export { PROVIDER_CAPABILITIES };
