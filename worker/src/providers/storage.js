@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { sql } from '../db.js';
 import { getLegacyAdapter } from './legacy.js';
-import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount } from './google.js';
+import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, googleMove, syncGoogleAccount } from './google.js';
 
 export function nodeReadableFromWeb(stream) {
   return stream ? Readable.fromWeb(stream) : null;
@@ -50,6 +50,17 @@ export async function performRename(env, account, row, name) {
   if (account.provider === 'google_drive') return googleRename(env, account, row.remote_file_id, name);
   const { adapter } = await getStorageAdapter(env, account);
   return adapter.renameFile(row, name);
+}
+
+export async function performMove(env, account, row, destination) {
+  if (account.provider === 'google_drive') {
+    return googleMove(env, account, row.remote_file_id, destination.remoteParentId || 'root');
+  }
+  const { adapter } = await getStorageAdapter(env, account);
+  if (typeof adapter.moveFile !== 'function') {
+    throw Object.assign(new Error(`Move is not supported for provider ${account.provider}`), { status: 409 });
+  }
+  return adapter.moveFile(row, destination);
 }
 
 export async function performDelete(env, account, row) {
