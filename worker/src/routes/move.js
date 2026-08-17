@@ -35,7 +35,11 @@ export async function moveRoutes(app) {
       }
 
       const destinationId = String(
-        body.destination_folder_id || body.destinationFolderId || body.targetFolderId || '',
+        body.destination_folder_id ||
+        body.target_folder_id ||
+        body.destinationFolderId ||
+        body.targetFolderId ||
+        '',
       ).trim();
       const requestedPath = body.virtual_path ?? body.virtualPath ?? null;
 
