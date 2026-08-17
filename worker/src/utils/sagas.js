@@ -1,4 +1,5 @@
 import { sql } from '../db.js';
+import { performRename } from '../providers/storage.js';
 
 export const SAGA_STATUSES = new Set(['pending_remote', 'remote_succeeded', 'completed', 'failed', 'pending_reconcile']);
 
@@ -35,12 +36,109 @@ async function reconcileUpload(db, saga) {
   await db`UPDATE upload_sessions SET status='completed', updated_at=NOW() WHERE id=${uploadId} AND user_id=${saga.user_id}`;
 }
 
-async function reconcileRename(db, saga) {
-  const row = saga.file_id ? (await db`SELECT id FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id} LIMIT 1`)[0] : null;
-  if (!row) return;
-  const newName = String(saga.payload?.newName || '').trim();
-  if (!newName) throw new Error('Rename saga is missing the target name');
-  await db`UPDATE file_metadata SET file_name=${newName}, updated_at=NOW() WHERE id=${saga.file_id} AND user_id=${saga.user_id}`;
+async function reconcileRename(db, saga, env) {
+  const payload = saga.payload || {};
+  const virtualFolderId = payload.virtualFolderId;
+  if (!virtualFolderId) {
+    const row = saga.file_id ? (await db`SELECT id FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id} LIMIT 1`)[0] : null;
+    if (!row) return;
+    const newName = String(payload.newName || '').trim();
+    if (!newName) throw new Error('Rename saga is missing the target name');
+    await db`UPDATE file_metadata SET file_name=${newName}, updated_at=NOW() WHERE id=${saga.file_id} AND user_id=${saga.user_id}`;
+    return;
+  }
+
+  const newName = String(payload.newName || '').trim();
+  const oldPath = String(payload.oldPath || '').trim();
+  const newPath = String(payload.newPath || '').trim();
+  const remoteFileId = String(payload.remoteFileId || '').trim();
+  if (!newName || !oldPath || !newPath || !remoteFileId) throw new Error('Virtual folder rename saga is missing reconciliation metadata');
+
+  const materializationRows = await db`
+    SELECT vfm.*, ca.id AS account_id, ca.email, ca.provider, ca.encrypted_credentials,
+           ca.total_space, ca.used_space, ca.status
+    FROM virtual_folder_materializations vfm
+    JOIN cloud_accounts ca ON ca.id=vfm.cloud_account_id AND ca.user_id=vfm.user_id
+    WHERE vfm.virtual_folder_id=${virtualFolderId}
+      AND vfm.user_id=${saga.user_id}
+      AND vfm.cloud_account_id=${saga.cloud_account_id}
+      AND vfm.remote_file_id=${remoteFileId}
+    LIMIT 1
+  `;
+  const materialization = materializationRows[0];
+  if (!materialization) throw new Error('Virtual folder materialization no longer exists');
+  if (materialization.status === 'failed') throw new Error('Virtual folder materialization is marked failed');
+  if (materialization.account_id !== saga.cloud_account_id || materialization.status !== 'active') throw new Error('Virtual folder rename account is unavailable');
+
+  await performRename(env, {
+    id: materialization.account_id,
+    user_id: saga.user_id,
+    email: materialization.email,
+    provider: materialization.provider,
+    encrypted_credentials: materialization.encrypted_credentials,
+    total_space: materialization.total_space,
+    used_space: materialization.used_space,
+    status: materialization.status,
+  }, {
+    id: remoteFileId,
+    user_id: saga.user_id,
+    file_name: String(payload.virtualFolderName || newName),
+    is_folder: true,
+    cloud_account_id: materialization.account_id,
+    remote_file_id: remoteFileId,
+    remote_parent_id: materialization.remote_parent_id,
+  }, newName);
+
+  const pendingRows = await db`
+    SELECT COUNT(*)::int AS count
+    FROM operation_sagas
+    WHERE user_id=${saga.user_id}
+      AND operation='rename'
+      AND status='pending_reconcile'
+      AND payload->>'virtualFolderId'=${String(virtualFolderId)}
+  `;
+  const pendingCount = Number(pendingRows[0]?.count || 0);
+  if (pendingCount > 1) return;
+
+  const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`;
+  const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`;
+  const folderRows = await db`
+    SELECT parent_path FROM virtual_folders
+    WHERE id=${virtualFolderId} AND user_id=${saga.user_id}
+    LIMIT 1
+  `;
+  const folder = folderRows[0];
+  if (!folder) throw new Error('Virtual folder no longer exists');
+
+  await db`
+    UPDATE virtual_folders
+    SET
+      path=CASE WHEN id=${virtualFolderId} THEN ${newPath} ELSE ${newPrefix} || substring(path from ${oldPrefix.length + 1}) END,
+      parent_path=CASE WHEN id=${virtualFolderId} THEN ${folder.parent_path} ELSE ${newPrefix} || substring(parent_path from ${oldPrefix.length + 1}) END,
+      name=CASE WHEN id=${virtualFolderId} THEN ${newName} ELSE name END,
+      updated_at=NOW()
+    WHERE user_id=${saga.user_id}
+      AND (id=${virtualFolderId} OR left(path,char_length(${oldPrefix}))=${oldPrefix})
+  `;
+
+  await db`
+    UPDATE file_metadata
+    SET
+      virtual_path=CASE
+        WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${payload.virtualFolderName || newName} THEN ${folder.parent_path}
+        ELSE ${newPrefix} || substring(virtual_path from ${oldPrefix.length + 1})
+      END,
+      file_name=CASE
+        WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${payload.virtualFolderName || newName} THEN ${newName}
+        ELSE file_name
+      END,
+      updated_at=NOW()
+    WHERE user_id=${saga.user_id}
+      AND (
+        (is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${payload.virtualFolderName || newName})
+        OR left(virtual_path,char_length(${oldPrefix}))=${oldPrefix}
+      )
+  `;
 }
 
 async function reconcileTransferredTree(db, saga, tree) {
@@ -134,7 +232,7 @@ export async function reconcilePendingSagas(env, userId = null) {
     try {
       switch (saga.operation) {
         case 'upload': await reconcileUpload(db, saga); break;
-        case 'rename': await reconcileRename(db, saga); break;
+        case 'rename': await reconcileRename(db, saga, env); break;
         case 'move': await reconcileMove(db, saga); break;
         case 'delete': await reconcileDelete(db, saga); break;
         default: throw new Error(`Unsupported saga operation: ${saga.operation}`);
