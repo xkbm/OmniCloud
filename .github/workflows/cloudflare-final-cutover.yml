@@ -99,3 +99,5 @@ jobs:
         run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/ >/dev/null
       - name: Smoke test API
         run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/api/health
+
+# Trigger deployment for the current cloudflare-test revision.
