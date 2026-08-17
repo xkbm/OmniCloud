@@ -52,6 +52,9 @@ jobs:
           node --check worker/src/utils/sagas.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
+      - name: Test storage pool
+        run: node --test worker/test/storage-pool.test.js
+
       - name: Prepare legacy adapters
         run: npm run prepare:legacy
         working-directory: worker
