@@ -3,6 +3,7 @@ import { performUpload } from '../providers/storage.js';
 import { resolveUploadFileName } from '../providers/duplicatePolicy.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.js';
+import { loadStoragePool } from '../storage/service.js';
 import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -58,11 +59,34 @@ export async function uploadsRoutes(app) {
 
       const db = sql(c.env);
       const requested = body.cloud_account_id || body.cloudAccountId || null;
-      const accounts = requested
-        ? await db`SELECT * FROM cloud_accounts WHERE id=${requested} AND user_id=${user.id} AND status='active' LIMIT 1`
-        : await db`SELECT * FROM cloud_accounts WHERE user_id=${user.id} AND status='active' ORDER BY used_space ASC LIMIT 1`;
-      const account = accounts[0];
-      if (!account) return c.json({ error: 'No active storage account is connected', code: 'NO_ACTIVE_ACCOUNT' }, 409);
+      let account = null;
+
+      if (requested) {
+        const accounts = await db`
+          SELECT *
+          FROM cloud_accounts
+          WHERE id=${requested}
+            AND user_id=${user.id}
+            AND status='active'
+          LIMIT 1
+        `;
+        account = accounts[0] || null;
+        if (!account) return c.json({ error: 'Requested storage account is not active', code: 'INVALID_STORAGE_BACKEND' }, 409);
+      } else {
+        const pool = await loadStoragePool(c.env, user.id);
+        const selected = pool.chooseBackend(size);
+        if (!selected) return c.json({ error: 'No storage backend has enough healthy capacity for this file', code: 'NO_STORAGE_CAPACITY' }, 409);
+        const accounts = await db`
+          SELECT *
+          FROM cloud_accounts
+          WHERE id=${selected.id}
+            AND user_id=${user.id}
+            AND status='active'
+          LIMIT 1
+        `;
+        account = accounts[0] || null;
+        if (!account) return c.json({ error: 'Selected storage backend is no longer active', code: 'STORAGE_BACKEND_UNAVAILABLE' }, 409);
+      }
 
       const resolved = await resolveUploadFileName(c.env, account, {
         fileName,
@@ -223,7 +247,6 @@ export async function uploadsRoutes(app) {
           console.error('[uploads] failed to update upload saga:', sagaError);
         }
       }
-      const status = error?.code === 'MAX_FILE_SIZE_EXCEEDED' ? 413 : (error?.status || 400);
       return safeErrorResponse(c, error, 'Upload failed', 'UPLOAD_FAILED');
     }
   });
