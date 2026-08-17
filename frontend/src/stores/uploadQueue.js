@@ -194,40 +194,17 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 				});
 
 				try {
-					const response = await fetch(api.downloadUrl(file.id), { signal: abortController.signal });
-					if (!response.ok) {
-						const payload = await response.json().catch(() => ({ error: 'Download failed' }));
-						throw new Error(payload.error || 'Download failed');
-					}
-
-					const contentLength = Number(response.headers.get('Content-Length')) || file.size || 0;
-					const reader = response.body?.getReader();
-					const chunks = [];
-					let received = 0;
-
-					if (reader) {
-						while (true) {
-							if (abortController.signal.aborted) throw new DOMException('Download cancelled', 'AbortError');
-							const { done, value } = await reader.read();
-							if (done) break;
-							chunks.push(value);
-							received += value.length;
-							const percent = contentLength ? Math.min(99, Math.round((received / contentLength) * 100)) : 50;
-							this.updateUpload(queueItem.id, { progress_percentage: percent });
-						}
-					} else {
-						chunks.push(await response.blob());
-					}
-
-					const blob = chunks[0] instanceof Blob ? chunks[0] : new Blob(chunks);
-					const url = URL.createObjectURL(blob);
 					const link = document.createElement('a');
-					link.href = url;
+					link.href = api.downloadUrl(file.id);
 					link.download = file.display_name || file.file_name || 'download';
+					link.rel = 'noopener';
+					link.style.display = 'none';
 					document.body.appendChild(link);
 					link.click();
 					link.remove();
-					URL.revokeObjectURL(url);
+
+					// The browser now owns the response stream and writes it directly
+					// to its download pipeline. No response body is read into JS memory.
 					this.updateUpload(queueItem.id, { progress_percentage: 100, status: 'completed' });
 				} catch (error) {
 					if (isAbortError(error)) {
@@ -262,9 +239,6 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 					const uploadId = data?.upload_id || data?.id;
 					if (!uploadId) throw new Error('Upload session was not created');
 
-					// WebSocket progress is optional. Cloudflare Pages may not proxy
-					// upgrade requests on the same route, so never make the upload
-					// depend on it. The actual file transfer is plain HTTP below.
 					this.updateUpload(queueItem.id, {
 						status: 'uploading',
 						remoteUploadId: uploadId,
