@@ -186,13 +186,8 @@ router.get('/files', async (req, res, next) => {
 router.get('/files/:id/shared-children', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
-
-		if (!context.file.is_folder) {
-			return res.status(400).json({ error: 'Only folders can be opened' });
-		}
+		if (!ensureFileContext(context, res)) return;
+		if (!context.file.is_folder) return res.status(400).json({ error: 'Only folders can be opened' });
 
 		const items = await context.adapter.listSharedFolderChildren(context.file);
 		return res.json({
@@ -206,9 +201,7 @@ router.get('/files/:id/shared-children', async (req, res, next) => {
 router.patch('/files/:id/star', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
+		if (!ensureFileContext(context, res)) return;
 
 		const isStarred = Boolean(req.body?.is_starred ?? req.body?.isStarred ?? true);
 		const supportsStarred = Boolean(context.adapter.getCapabilities?.().starred);
@@ -216,9 +209,7 @@ router.patch('/files/:id/star', async (req, res, next) => {
 		if (supportsStarred) {
 			await context.adapter.setFileStarred(context.file, isStarred);
 			await syncAccount(req.user.id, context.account);
-			if (!decodeSharedFileId(context.file.id)) {
-				updateFileStarredByRemoteId(req.user.id, context.account.id, context.file.remote_file_id, isStarred);
-			}
+			if (!decodeSharedFileId(context.file.id)) updateFileStarredByRemoteId(req.user.id, context.account.id, context.file.remote_file_id, isStarred);
 		} else {
 			setFileStarred(req.user.id, context.file.id, isStarred);
 		}
@@ -231,15 +222,11 @@ router.patch('/files/:id/star', async (req, res, next) => {
 router.post('/files/bulk/delete', async (req, res, next) => {
 	try {
 		const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
-		if (!ids.length) {
-			return res.status(400).json({ error: 'At least one file id is required' });
-		}
+		if (!ids.length) return res.status(400).json({ error: 'At least one file id is required' });
 
 		const contexts = await Promise.all(ids.map(async (id) => ({ id, ...await getFileContext(req.user.id, id) })));
 		const invalid = contexts.find((context) => !context.file || !context.account || context.account.status !== 'active' || !context.adapter);
-		if (invalid) {
-			return res.status(invalid.file ? 409 : 404).json({ error: invalid.file ? 'One or more file accounts are no longer connected' : 'One or more files were not found' });
-		}
+		if (invalid) return res.status(invalid.file ? 409 : 404).json({ error: invalid.file ? 'One or more file accounts are no longer connected' : 'One or more files were not found' });
 
 		const touchedAccountIds = new Set();
 		for (const context of contexts) {
@@ -249,9 +236,7 @@ router.post('/files/bulk/delete', async (req, res, next) => {
 
 		for (const accountId of touchedAccountIds) {
 			const account = getAccountById(req.user.id, accountId);
-			if (account) {
-				await syncAccount(req.user.id, account);
-			}
+			if (account) await syncAccount(req.user.id, account);
 		}
 
 		return res.json({ data: { success: true, count: contexts.length } });
@@ -263,17 +248,10 @@ router.post('/files/bulk/delete', async (req, res, next) => {
 router.get('/files/:id', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
+		if (!ensureFileContext(context, res)) return;
 
 		const details = await context.adapter.getFileDetails(context.file);
-		return res.json({
-			data: {
-				...context.file,
-				...details,
-			},
-		});
+		return res.json({ data: { ...context.file, ...details } });
 	} catch (error) {
 		next(error);
 	}
@@ -282,16 +260,12 @@ router.get('/files/:id', async (req, res, next) => {
 router.get('/files/:id/download', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
+		if (!ensureFileContext(context, res)) return;
 		const stream = await context.adapter.getDownloadStream(context.file);
 
 		res.setHeader('Content-Disposition', `attachment; filename="${context.file.file_name}"`);
 		res.setHeader('Content-Type', context.file.mime_type || 'application/octet-stream');
-		if (!context.file.is_folder && context.file.size) {
-			res.setHeader('Content-Length', String(context.file.size));
-		}
+		if (!context.file.is_folder && context.file.size) res.setHeader('Content-Length', String(context.file.size));
 		stream.pipe(res);
 	} catch (error) {
 		next(error);
@@ -301,31 +275,17 @@ router.get('/files/:id/download', async (req, res, next) => {
 router.get('/files/:id/preview', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
-
-		if (context.file.is_folder) {
-			return res.status(400).json({ error: 'Folder preview is not supported' });
-		}
+		if (!ensureFileContext(context, res)) return;
+		if (context.file.is_folder) return res.status(400).json({ error: 'Folder preview is not supported' });
 
 		const mimeType = context.file.mime_type || 'application/octet-stream';
-		const isPreviewable = /^(image|video|audio|text)\//.test(mimeType)
-			|| mimeType === 'application/pdf'
-			|| mimeType === 'application/json';
-
-		if (!isPreviewable) {
-			return res.status(415).json({ error: 'Preview is not supported for this file type' });
-		}
+		const isPreviewable = /^(image|video|audio|text)\//.test(mimeType) || mimeType === 'application/pdf' || mimeType === 'application/json';
+		if (!isPreviewable) return res.status(415).json({ error: 'Preview is not supported for this file type' });
 
 		const stream = await context.adapter.getDownloadStream(context.file);
-
 		res.setHeader('Content-Disposition', `inline; filename="${context.file.file_name}"`);
 		res.setHeader('Content-Type', mimeType);
-		if (context.file.size) {
-			res.setHeader('Content-Length', String(context.file.size));
-		}
-
+		if (context.file.size) res.setHeader('Content-Length', String(context.file.size));
 		stream.pipe(res);
 	} catch (error) {
 		next(error);
@@ -335,17 +295,36 @@ router.get('/files/:id/preview', async (req, res, next) => {
 router.patch('/files/:id/rename', async (req, res, next) => {
 	try {
 		const { name } = req.body;
-		if (!name?.trim()) {
-			return res.status(400).json({ error: 'New name is required' });
-		}
+		if (!name?.trim()) return res.status(400).json({ error: 'New name is required' });
 
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
+		if (!ensureFileContext(context, res)) return;
 
 		await context.adapter.renameFile(context.file, name.trim());
 		await syncAccount(req.user.id, context.account);
+		return res.json({ data: { success: true } });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/files/:id/move', async (req, res, next) => {
+	try {
+		const targetFolderId = req.body?.target_folder_id || req.body?.targetFolderId;
+		if (!targetFolderId) return res.status(400).json({ error: 'Target folder is required' });
+
+		const sourceContext = await getFileContext(req.user.id, req.params.id);
+		if (!ensureFileContext(sourceContext, res)) return;
+
+		const targetContext = await getFileContext(req.user.id, targetFolderId);
+		if (!ensureFileContext(targetContext, res)) return;
+		if (!targetContext.file.is_folder) return res.status(400).json({ error: 'Target must be a folder' });
+		if (sourceContext.file.is_folder && sourceContext.file.id === targetContext.file.id) return res.status(400).json({ error: 'Cannot move a folder into itself' });
+		if (sourceContext.account.id !== targetContext.account.id) return res.status(400).json({ error: 'Source and target must belong to the same cloud account' });
+		if (sourceContext.account.provider !== 'google_drive') return res.status(400).json({ error: 'Move is currently supported for Google Drive only' });
+
+		await sourceContext.adapter.moveFile(sourceContext.file, targetContext.file);
+		await syncAccount(req.user.id, sourceContext.account);
 
 		return res.json({ data: { success: true } });
 	} catch (error) {
@@ -356,12 +335,9 @@ router.patch('/files/:id/rename', async (req, res, next) => {
 router.delete('/files/:id', async (req, res, next) => {
 	try {
 		const context = await getFileContext(req.user.id, req.params.id);
-		if (!ensureFileContext(context, res)) {
-			return;
-		}
+		if (!ensureFileContext(context, res)) return;
 
 		await deleteContextFile(req.user.id, context, req.params.id);
-
 		return res.json({ data: { success: true } });
 	} catch (error) {
 		next(error);
@@ -371,22 +347,14 @@ router.delete('/files/:id', async (req, res, next) => {
 router.post('/files/folders', async (req, res, next) => {
 	try {
 		const { name, virtual_path = '/' } = req.body;
-
-		if (!name?.trim()) {
-			return res.status(400).json({ error: 'Folder name is required' });
-		}
+		if (!name?.trim()) return res.status(400).json({ error: 'Folder name is required' });
 
 		const { selected } = selectBestAccount(req.user.id, 0);
 		const account = getAccountById(req.user.id, selected.id);
 		const adapter = createAdapter(account);
 
-		await adapter.createFolder({
-			name: name.trim(),
-			virtualPath: virtual_path,
-		});
-
+		await adapter.createFolder({ name: name.trim(), virtualPath: virtual_path });
 		await syncAccount(req.user.id, account);
-
 		return res.status(201).json({ data: { success: true } });
 	} catch (error) {
 		next(error);
