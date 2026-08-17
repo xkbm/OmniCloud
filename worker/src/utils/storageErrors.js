@@ -3,9 +3,7 @@ const TRANSIENT_STATUS_CODES = new Set([429, 502, 503, 504]);
 export function isTransientStorageError(error) {
   if (!error) return false;
   if (error.code === 'STORAGE_TRANSIENT') return true;
-  const status = Number(error.status);
-  if (TRANSIENT_STATUS_CODES.has(status)) return true;
-  return error instanceof TypeError && /fetch|network|socket|connection/i.test(String(error.message || ''));
+  return TRANSIENT_STATUS_CODES.has(Number(error.status));
 }
 
 export function toTransientStorageError(error, fallback = 'Storage provider temporarily unavailable') {
