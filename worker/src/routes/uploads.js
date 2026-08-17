@@ -4,6 +4,7 @@ import { resolveUploadFileName } from '../providers/duplicatePolicy.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.js';
 import { chooseStorageBackend, reserveStorage, releaseStorageReservation } from '../storage/service.js';
+import { ensureVirtualFolder, getVirtualFolderMaterialization, upsertVirtualFolderMaterialization, splitFolderPath } from '../storage/virtualFolders.js';
 import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -43,57 +44,48 @@ async function ensureRemoteParentPath(env, db, userId, account, virtualPath) {
   const normalized = normalizeVirtualPath(virtualPath || '/');
   if (normalized === '/') return null;
 
-  const parts = normalized.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-  let parentPath = '/';
-  let parentRemoteId = null;
-
-  for (const name of parts) {
-    const existingRows = await db`
-      SELECT id, remote_file_id
-      FROM file_metadata
-      WHERE user_id=${userId}
-        AND cloud_account_id=${account.id}
-        AND is_folder=TRUE
-        AND virtual_path=${parentPath}
-        AND file_name=${name}
-      LIMIT 1
-    `;
-
-    if (existingRows[0]?.remote_file_id) {
-      parentRemoteId = String(existingRows[0].remote_file_id);
-    } else {
-      const folder = await performCreateFolder(env, account, {
-        name,
-        virtualPath: parentPath,
-        remoteParentId: parentRemoteId,
-      });
-      const remoteFileId = String(folder?.remoteFileId || folder?.id || '');
-      if (!remoteFileId) {
-        throw Object.assign(new Error('Storage provider did not return a folder identifier'), {
-          code: 'REMOTE_FOLDER_CREATE_FAILED',
-          status: 502,
-        });
-      }
-
-      await db`
-        INSERT INTO file_metadata
-          (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id)
-        VALUES
-          (${crypto.randomUUID()},${userId},${parentPath},${folder.fileName || name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${remoteFileId},${folder.remoteParentId || parentRemoteId || null})
-        ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
-          file_name=EXCLUDED.file_name,
-          virtual_path=EXCLUDED.virtual_path,
-          remote_parent_id=EXCLUDED.remote_parent_id,
-          updated_at=NOW()
-      `;
-
-      parentRemoteId = remoteFileId;
-    }
-
-    parentPath = normalizeVirtualPath(`${parentPath}${name}`);
+  const virtualFolder = await ensureVirtualFolder(env, userId, normalized);
+  const existingMaterialization = await getVirtualFolderMaterialization(env, userId, virtualFolder.id, account.id);
+  if (existingMaterialization?.status === 'active' && existingMaterialization.remote_file_id) {
+    return String(existingMaterialization.remote_file_id);
   }
 
-  return parentRemoteId;
+  const { parentPath, name } = splitFolderPath(normalized);
+  const parentRemoteId = await ensureRemoteParentPath(env, db, userId, account, parentPath);
+  const folder = await performCreateFolder(env, account, {
+    name,
+    virtualPath: parentPath,
+    remoteParentId: parentRemoteId,
+  });
+  const remoteFileId = String(folder?.remoteFileId || folder?.id || '');
+  if (!remoteFileId) {
+    throw Object.assign(new Error('Storage provider did not return a folder identifier'), {
+      code: 'REMOTE_FOLDER_CREATE_FAILED',
+      status: 502,
+    });
+  }
+
+  await upsertVirtualFolderMaterialization(env, {
+    userId,
+    virtualFolderId: virtualFolder.id,
+    cloudAccountId: account.id,
+    remoteFileId,
+    remoteParentId: folder.remoteParentId || parentRemoteId || null,
+  });
+
+  await db`
+    INSERT INTO file_metadata
+      (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id)
+    VALUES
+      (${crypto.randomUUID()},${userId},${parentPath},${folder.fileName || name},TRUE,FALSE,0,'application/vnd.google-apps.folder',${account.id},${remoteFileId},${folder.remoteParentId || parentRemoteId || null})
+    ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+      file_name=EXCLUDED.file_name,
+      virtual_path=EXCLUDED.virtual_path,
+      remote_parent_id=EXCLUDED.remote_parent_id,
+      updated_at=NOW()
+  `;
+
+  return remoteFileId;
 }
 
 export async function uploadsRoutes(app) {
