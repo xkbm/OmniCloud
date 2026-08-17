@@ -54,25 +54,25 @@ function handleDragEnd() {
 }
 
 function handleDragEnter(event) {
-	if (!props.item.is_folder || !isInternalDrag(event)) return;
-	if (props.item.provider !== 'google_drive') return;
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	event.preventDefault();
-	event.stopPropagation();
 	isDropTarget.value = true;
 }
 
 function handleDragOver(event) {
-	if (!props.item.is_folder || !isInternalDrag(event)) return;
-	if (props.item.provider !== 'google_drive') return;
+	if (!isInternalDrag(event)) return;
+	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	event.preventDefault();
-	event.stopPropagation();
 	isDropTarget.value = true;
 }
 
 function handleDragLeave(event) {
-	if (!props.item.is_folder || !isInternalDrag(event)) return;
+	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
 	if (!event.currentTarget.contains(event.relatedTarget)) {
 		isDropTarget.value = false;
@@ -80,16 +80,15 @@ function handleDragLeave(event) {
 }
 
 function handleDrop(event) {
-	if (!props.item.is_folder || !isInternalDrag(event)) return;
-	if (props.item.provider !== 'google_drive') return;
-	event.preventDefault();
+	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
+	if (!props.item.is_folder || props.item.provider !== 'google_drive') return;
+	event.preventDefault();
 	isDropTarget.value = false;
 	window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
 		detail: {
 			sourceFileId: event.dataTransfer.getData(dragMime),
-			sourceWasSelected: true,
-			targetFolderId: props.item.id,
+			sourceWasSelected: props.selected,
 			sourceFile: null,
 			targetFolder: props.item,
 		},
