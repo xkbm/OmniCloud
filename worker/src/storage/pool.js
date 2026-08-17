@@ -57,12 +57,15 @@ export class StoragePool {
   }
 
   chooseBackend(size = 0, options = {}) {
-    const candidates = this.activeBackends.filter((backend) => backend.canStore(size));
+    const excluded = new Set((Array.isArray(options.excludedBackendIds) ? options.excludedBackendIds : [options.excludedBackendIds])
+      .filter(Boolean)
+      .map(String));
+    const candidates = this.activeBackends.filter((backend) => !excluded.has(backend.id) && backend.canStore(size));
     if (!candidates.length) return null;
 
     if (options.backendId) {
       const requested = this.getBackend(options.backendId);
-      if (requested && candidates.includes(requested)) return requested;
+      if (requested && !excluded.has(requested.id) && candidates.includes(requested)) return requested;
     }
 
     switch (options.strategy || this.strategy) {
