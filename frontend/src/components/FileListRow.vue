@@ -4,7 +4,6 @@ import { IconStarFilled } from '@tabler/icons-vue';
 import TruncateMarquee from './TruncateMarquee.vue';
 import { formatBytes, formatDate, getModifiedTime, providerIcon, providerLabel } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
-import { api } from '../services/api';
 import '../utils/internalDragGuard.js';
 
 const props = defineProps({
@@ -19,6 +18,7 @@ const emit = defineEmits(['select', 'open', 'contextmenu']);
 const isDragging = ref(false);
 const isDropTarget = ref(false);
 const dragMime = 'application/x-omnicloud-file';
+const selectionMime = 'application/x-omnicloud-selection';
 
 const displayName = computed(() => {
 	if (props.nameField === 'display_name') {
@@ -48,6 +48,7 @@ function handleDragStart(event) {
 	isDragging.value = true;
 	event.dataTransfer.effectAllowed = 'move';
 	event.dataTransfer.setData(dragMime, props.item.id);
+	event.dataTransfer.setData(selectionMime, props.selected ? '1' : '0');
 	event.dataTransfer.setData('text/plain', props.item.file_name || '');
 }
 
@@ -82,7 +83,7 @@ function handleDragLeave(event) {
 	}
 }
 
-async function handleDrop(event) {
+function handleDrop(event) {
 	if (!isInternalDrag(event)) return;
 	event.stopPropagation();
 	if (!props.item.is_folder || !canDrag.value) return;
@@ -92,21 +93,13 @@ async function handleDrop(event) {
 	const sourceFileId = event.dataTransfer.getData(dragMime);
 	if (!sourceFileId || sourceFileId === props.item.id) return;
 
-	window.dispatchEvent(new CustomEvent('omnicloud-drag-move-start', {
-		detail: { sourceFileId, targetFolder: props.item },
+	window.dispatchEvent(new CustomEvent('omnicloud-drag-move', {
+		detail: {
+			sourceFileId,
+			targetFolder: props.item,
+			sourceWasSelected: event.dataTransfer.getData(selectionMime) === '1',
+		},
 	}));
-
-	try {
-		await api.moveFile(sourceFileId, { target_folder_id: props.item.id });
-		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-complete', {
-			detail: { sourceFileId, targetFolder: props.item },
-		}));
-		window.location.reload();
-	} catch (error) {
-		window.dispatchEvent(new CustomEvent('omnicloud-drag-move-error', {
-			detail: { error },
-		}));
-	}
 }
 </script>
 
