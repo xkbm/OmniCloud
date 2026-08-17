@@ -2,6 +2,22 @@ import { requireUser, sql } from '../db.js';
 import { performUpload } from '../providers/storage.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
 
+const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+function getMaxFileSize(env) {
+  const configured = Number(env.MAX_FILE_SIZE);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_MAX_FILE_SIZE;
+  return Math.floor(configured);
+}
+
+function sizeLimitResponse(c, maxFileSize) {
+  return c.json({
+    error: 'File exceeds the configured maximum upload size',
+    code: 'MAX_FILE_SIZE_EXCEEDED',
+    max_file_size: maxFileSize,
+  }, 413);
+}
+
 async function sendProgress(c, uploadId, uploaded, total) {
   const stub = c.env.UPLOAD_PROGRESS?.get(c.env.UPLOAD_PROGRESS.idFromName(uploadId));
   if (!stub) return;
@@ -21,8 +37,10 @@ export async function uploadsRoutes(app) {
       const mimeType = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
       const virtualPath = normalizeVirtualPath(body.virtualPath || body.virtual_path || '/');
       const remoteParentId = body.remoteParentId || body.remote_parent_id || null;
+      const maxFileSize = getMaxFileSize(c.env);
       if (!fileName) return c.json({ error: 'File name is required' }, 400);
-      if (!Number.isFinite(size) || size < 0) return c.json({ error: 'Invalid file size' }, 400);
+      if (!Number.isSafeInteger(size) || size < 0) return c.json({ error: 'Invalid file size' }, 400);
+      if (size > maxFileSize) return sizeLimitResponse(c, maxFileSize);
 
       const db = sql(c.env);
       const requested = body.cloud_account_id || body.cloudAccountId || null;
@@ -34,7 +52,7 @@ export async function uploadsRoutes(app) {
       const id = crypto.randomUUID();
       const token = crypto.randomUUID();
       await db`INSERT INTO upload_sessions (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,status) VALUES (${id},${token},${user.id},${accounts[0].id},${fileName},${mimeType},${size},${virtualPath},${remoteParentId},'pending')`;
-      return c.json({ data: { id, upload_id: id, token, session_token: token, provider: accounts[0].provider, cloudAccountId: accounts[0].id, cloud_account_id: accounts[0].id, target_account: { id: accounts[0].id, provider: accounts[0].provider, email: accounts[0].email }, status: 'pending' } }, 201);
+      return c.json({ data: { id, upload_id: id, token, session_token: token, provider: accounts[0].provider, cloudAccountId: accounts[0].id, cloud_account_id: accounts[0].id, target_account: { id: accounts[0].id, provider: accounts[0].provider, email: accounts[0].email }, status: 'pending', max_file_size: maxFileSize } }, 201);
     } catch (error) { return c.json({ error: error?.message || 'Unable to initiate upload' }, error?.status || 400); }
   });
 
@@ -50,8 +68,16 @@ export async function uploadsRoutes(app) {
       if (session.account_status !== 'active') return c.json({ error: 'Storage account is not active' }, 409);
       if (!c.req.raw.body) return c.json({ error: 'Upload body is empty' }, 400);
 
+      const maxFileSize = getMaxFileSize(c.env);
+      const expectedSize = Number(session.size);
+      const contentLength = Number(c.req.header('Content-Length'));
+      if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) return c.json({ error: 'Upload session has an invalid size' }, 409);
+      if (expectedSize > maxFileSize) return sizeLimitResponse(c, maxFileSize);
+      if (Number.isFinite(contentLength) && contentLength > maxFileSize) return sizeLimitResponse(c, maxFileSize);
+      if (Number.isFinite(contentLength) && contentLength !== expectedSize) return c.json({ error: 'Upload content length does not match declared file size' }, 400);
+
       await db`UPDATE upload_sessions SET status='uploading',updated_at=NOW() WHERE id=${uploadId}`;
-      const total = Number(session.size || c.req.header('Content-Length') || 0);
+      const total = expectedSize;
       let uploaded = 0; let lastReported = 0; const reader = c.req.raw.body.getReader();
       const body = new ReadableStream({
         async start(controller) {
@@ -60,14 +86,29 @@ export async function uploadsRoutes(app) {
               const { done, value } = await reader.read();
               if (done) break;
               uploaded += value.byteLength;
-              if (uploaded > Number(session.size)) { controller.error(new Error('Uploaded content exceeds declared file size')); return; }
+              if (uploaded > maxFileSize || uploaded > expectedSize) {
+                controller.error(new Error('Uploaded content exceeds the configured maximum file size'));
+                return;
+              }
               controller.enqueue(value);
-              if (uploaded - lastReported >= 1024 * 1024 || (total && uploaded >= total)) { lastReported = uploaded; await sendProgress(c, uploadId, uploaded, total); }
+              if (uploaded - lastReported >= 1024 * 1024 || (total && uploaded >= total)) {
+                lastReported = uploaded;
+                await sendProgress(c, uploadId, uploaded, total);
+              }
             }
-            if (uploaded !== Number(session.size)) { controller.error(new Error('Uploaded content size does not match declared file size')); return; }
+            if (uploaded !== expectedSize) {
+              controller.error(new Error('Uploaded content size does not match declared file size'));
+              return;
+            }
             controller.close();
-          } catch (error) { controller.error(error); }
-          finally { reader.releaseLock(); }
+          } catch (error) {
+            controller.error(error);
+          } finally {
+            reader.releaseLock();
+          }
+        },
+        cancel() {
+          reader.cancel().catch(() => {});
         },
       });
 
@@ -79,11 +120,12 @@ export async function uploadsRoutes(app) {
       await db`UPDATE upload_sessions SET status='completed',updated_at=NOW() WHERE id=${uploadId}`;
       const remoteId = result.remoteFileId || result.id;
       if (remoteId) await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${user.id},${session.virtual_path},${result.fileName || session.file_name},FALSE,FALSE,${Number(result.size || session.size || 0)},${result.mimeType || session.mime_type},${session.cloud_account_id},${String(remoteId)},${result.remoteParentId || result.parentId || session.remote_parent_id || null},${result.createdTime || null},${result.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
-      await sendProgress(c, uploadId, total || uploaded, total || uploaded);
+      await sendProgress(c, uploadId, total, total);
       return c.json({ data: { success: true, uploadId, file: result } }, 201);
     } catch (error) {
       try { await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId}`; } catch {}
-      return c.json({ error: error?.message || 'Upload failed' }, error?.status || 400);
+      const status = error?.code === 'MAX_FILE_SIZE_EXCEEDED' ? 413 : (error?.status || 400);
+      return c.json({ error: error?.message || 'Upload failed' }, status);
     }
   });
 }
