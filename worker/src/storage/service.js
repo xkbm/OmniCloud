@@ -57,9 +57,7 @@ async function nextPersistentCursor(db, userId, modulus) {
 
 export async function chooseStorageBackend(env, userId, size, { backendId = null } = {}) {
   const pool = await loadStoragePool(env, userId);
-  if (backendId) {
-    return pool.chooseBackend(size, { backendId });
-  }
+  if (backendId) return pool.chooseBackend(size, { backendId });
 
   const candidates = pool.activeBackends.filter((backend) => backend.canStore(size));
   if (!candidates.length) return null;
@@ -78,6 +76,57 @@ export async function chooseStorageBackend(env, userId, size, { backendId = null
   }
 
   return pool.chooseBackend(size);
+}
+
+export async function reserveStorage(env, { userId, accountId, bytes, uploadId, ttlSeconds = 3600 }) {
+  const size = Math.floor(Number(bytes));
+  if (!Number.isSafeInteger(size) || size <= 0) throw Object.assign(new Error('Reservation size must be a positive integer'), { code: 'INVALID_RESERVATION_SIZE' });
+  const ttl = Math.max(60, Math.floor(Number(ttlSeconds) || 3600));
+  const id = crypto.randomUUID();
+  const db = sql(env);
+  const rows = await db`
+    WITH capacity AS (
+      SELECT ca.id,
+             ca.total_space,
+             ca.used_space,
+             COALESCE((
+               SELECT SUM(sr.bytes)
+               FROM storage_reservations sr
+               WHERE sr.cloud_account_id = ca.id
+                 AND sr.status = 'active'
+                 AND sr.expires_at > NOW()
+             ), 0) AS reserved_bytes
+      FROM cloud_accounts ca
+      WHERE ca.id = ${accountId}
+        AND ca.user_id = ${userId}
+        AND ca.status = 'active'
+    )
+    INSERT INTO storage_reservations
+      (id,user_id,cloud_account_id,bytes,upload_id,status,expires_at)
+    SELECT
+      ${id},${userId},${accountId},${size},${uploadId || null},'active',NOW() + (${ttl} * INTERVAL '1 second')
+    FROM capacity
+    WHERE (capacity.total_space - capacity.used_space - capacity.reserved_bytes) >= ${size}
+    ON CONFLICT (upload_id) DO UPDATE
+      SET bytes = EXCLUDED.bytes,
+          cloud_account_id = EXCLUDED.cloud_account_id,
+          status = 'active',
+          expires_at = EXCLUDED.expires_at,
+          updated_at = NOW()
+    RETURNING id,user_id,cloud_account_id,bytes,upload_id,status,expires_at
+  `;
+  if (!rows[0]) throw Object.assign(new Error('No storage backend has enough effective capacity'), { code: 'NO_STORAGE_CAPACITY', status: 409 });
+  return rows[0];
+}
+
+export async function releaseStorageReservation(env, reservationId, userId) {
+  if (!reservationId || !userId) return;
+  const db = sql(env);
+  await db`
+    UPDATE storage_reservations
+    SET status='released', updated_at=NOW()
+    WHERE id=${reservationId} AND user_id=${userId} AND status='active'
+  `;
 }
 
 export async function saveStorageSetting(env, userId, key, value) {
