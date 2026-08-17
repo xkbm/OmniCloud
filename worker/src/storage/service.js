@@ -14,7 +14,7 @@ export async function loadStoragePool(env, userId) {
   const db = sql(env);
   const [accounts, settings] = await Promise.all([
     db`
-      SELECT id, user_id, provider, email, status, total_space, used_space
+      SELECT id, user_id, provider, email, status, health_status, health_checked_at, health_failure_count, total_space, used_space
       FROM cloud_accounts
       WHERE user_id = ${userId}
       ORDER BY created_at ASC, id ASC
