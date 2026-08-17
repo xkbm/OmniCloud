@@ -6,6 +6,8 @@ import { useFilePreviewModal } from './useFilePreviewModal';
 import { useFileDetailsModal } from './useFileDetailsModal';
 
 const MOVABLE_PROVIDERS = new Set(['google_drive', 'onedrive', 'dropbox', 'yandex', 's3', 'mega', 'pcloud']);
+const TRANSFER_POLL_INTERVAL_MS = 2000;
+const TRANSFER_POLL_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 export function useFileActions({
   sourceList,
@@ -91,6 +93,38 @@ export function useFileActions({
     return selectedFiles.value.length ? selectedFiles.value : (fallbackFile ? [fallbackFile] : []);
   }
 
+  async function waitForTransferJob(jobId) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < TRANSFER_POLL_TIMEOUT_MS) {
+      const response = await api.getTransfer(jobId);
+      const job = response?.data;
+      if (!job) throw new Error('Transfer job not found');
+
+      if (job.status === 'completed') return job;
+      if (job.status === 'failed') throw new Error(job.error_message || 'Transfer failed');
+      if (job.status === 'cancelled') throw new Error('Transfer cancelled');
+
+      await new Promise((resolve) => window.setTimeout(resolve, TRANSFER_POLL_INTERVAL_MS));
+    }
+
+    throw new Error('Transfer is taking longer than expected. You can check its progress from the transfer status.');
+  }
+
+  async function moveTargetToFolder(target, targetFolder) {
+    const response = await api.moveFile(target.id, { target_folder_id: targetFolder.id });
+    const transferJobId = response?.data?.transferJobId;
+    if (transferJobId) await waitForTransferJob(transferJobId);
+    return response;
+  }
+
+  async function moveTargetToPath(target, virtualPath) {
+    const response = await api.moveFile(target.id, { virtual_path: virtualPath });
+    const transferJobId = response?.data?.transferJobId;
+    if (transferJobId) await waitForTransferJob(transferJobId);
+    return response;
+  }
+
   function openContextMenu(event, file) {
     if (!selectedFileIds.value.has(file.id)) replaceSelection(file);
     return openContextMenuBase(event, file);
@@ -171,7 +205,7 @@ export function useFileActions({
       targets.length > 1 ? `Moviendo ${targets.length} elementos` : 'Moviendo',
       async () => {
         for (const target of targets) {
-          await api.moveFile(target.id, { target_folder_id: targetFolder.id });
+          await moveTargetToFolder(target, targetFolder);
         }
       },
     );
@@ -190,7 +224,7 @@ export function useFileActions({
     await runWithProgress(
       targets.length > 1 ? `Moviendo ${targets.length} elementos` : 'Moviendo',
       async () => {
-        for (const target of targets) await api.moveFile(target.id, { virtual_path: virtualPath });
+        for (const target of targets) await moveTargetToPath(target, virtualPath);
       },
     );
     clearSelection();
