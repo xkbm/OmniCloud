@@ -5,7 +5,6 @@ import { useFileSelection } from './useFileSelection';
 import { useFilePreviewModal } from './useFilePreviewModal';
 import { useFileDetailsModal } from './useFileDetailsModal';
 
-const MOVABLE_PROVIDERS = new Set(['google_drive', 'onedrive', 'dropbox', 'yandex', 's3', 'mega', 'pcloud']);
 const TRANSFER_POLL_INTERVAL_MS = 2000;
 const TRANSFER_POLL_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -87,7 +86,7 @@ export function useFileActions({
   const canOpenSelection = computed(() => selectedCount.value === 1 && Boolean(primarySelectedFile.value?.is_folder));
   const canPreviewSelection = computed(() => selectedCount.value === 1 && canPreview(primarySelectedFile.value));
   const canMoveSelection = computed(
-    () => selectedCount.value >= 1 && selectedFiles.value.every((file) => MOVABLE_PROVIDERS.has(file?.provider)),
+    () => selectedCount.value >= 1 && selectedFiles.value.every((file) => file?.capabilities?.move !== false),
   );
 
   function getActionFiles(fallbackFile = contextMenu.value.file) {
@@ -205,11 +204,11 @@ export function useFileActions({
 
   async function moveFilesToFolder(targets, targetFolder) {
     if (!targets.length || !targetFolder?.is_folder) return;
-    if (!MOVABLE_PROVIDERS.has(targetFolder.provider)) {
-      errorRef.value = 'Esta carpeta todavía no admite almacenamiento unificado.';
+    if (targetFolder?.capabilities?.move === false) {
+      errorRef.value = 'Esta carpeta no admite movimiento.';
       return;
     }
-    const invalid = targets.find((file) => !MOVABLE_PROVIDERS.has(file?.provider));
+    const invalid = targets.find((file) => file?.capabilities?.move === false);
     if (invalid) {
       errorRef.value = 'Uno de los elementos seleccionados no admite movimiento.';
       return;
@@ -230,7 +229,7 @@ export function useFileActions({
 
   async function moveFilesToPath(targets, virtualPath) {
     if (!targets.length) return;
-    const invalid = targets.find((file) => !MOVABLE_PROVIDERS.has(file?.provider));
+    const invalid = targets.find((file) => file?.capabilities?.move === false);
     if (invalid) {
       errorRef.value = 'Uno de los elementos seleccionados no admite movimiento.';
       return;
