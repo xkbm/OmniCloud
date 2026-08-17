@@ -92,6 +92,12 @@ jobs:
           grep -q "virtualFolderId" worker/src/routes/virtualFolders.js
           grep -q "virtualFolderId" worker/src/utils/sagas.js
 
+      - name: Verify virtual folder move destination contract
+        run: |
+          grep -q "virtual_folders" worker/src/routes/move.js
+          grep -q "virtual_folder_materializations" worker/src/routes/move.js
+          grep -q "destinationPath" worker/src/routes/move.js
+
       - name: Verify unified copy contract
         run: |
           grep -q "POST /api/files/:id/copy" worker/src/routes/copy.js || grep -q "api/files/:id/copy" worker/src/routes/copy.js
