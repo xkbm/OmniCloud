@@ -36,8 +36,12 @@ jobs:
           node --check worker/src/auth.js
           node --check worker/src/crypto.js
           node --check worker/src/uploadProgress.js
+          node --check worker/src/storage/backend.js
+          node --check worker/src/storage/pool.js
           node --check worker/src/routes/accounts.js
           node --check worker/src/routes/files.js
+          node --check worker/src/routes/move.js
+          node --check worker/src/routes/storage.js
           node --check worker/src/routes/uploads.js
           node --check worker/src/routes/google.js
           node --check worker/src/providers/storage.js
