@@ -52,11 +52,14 @@ export async function moveRoutes(app) {
       const row = rows[0];
       if (!row) return c.json({ error: 'File not found' }, 404);
       if (row.account_status !== 'active') return c.json({ error: 'The file account is no longer connected' }, 409);
-      if (row.is_folder && isDescendantPath(destinationPath, normalizePath(row.virtual_path))) {
+
+      const currentPath = normalizePath(row.virtual_path || '/');
+      const currentFolderPath = row.is_folder ? `${currentPath}${row.file_name}/` : null;
+      if (row.is_folder && (destinationPath === currentFolderPath || isDescendantPath(destinationPath, currentFolderPath))) {
         return c.json({ error: 'A folder cannot be moved inside itself or one of its children' }, 400);
       }
 
-      if (destinationPath === normalizePath(row.virtual_path || '/')) {
+      if (destinationPath === currentPath) {
         return c.json({ data: { success: true, unchanged: true } });
       }
 
@@ -76,7 +79,7 @@ export async function moveRoutes(app) {
       if (!destinationParentId) return c.json({ error: `Destination folder not found: ${destinationPath}` }, 404);
 
       const moved = await googleMove(c.env, account, row.remote_file_id, destinationParentId, row.remote_parent_id || null);
-      const oldPrefix = normalizePath(row.virtual_path || '/');
+      const oldPrefix = currentPath;
       const newPrefix = destinationPath;
       const newPath = `${newPrefix}${row.file_name}`;
 
@@ -107,6 +110,6 @@ export async function moveRoutes(app) {
       return c.json({ error: error?.message || 'Move failed' }, error?.status || 400);
     }
   });
-}
 
-// deployment marker
+  // deployment marker
+}
