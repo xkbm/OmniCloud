@@ -1,6 +1,9 @@
 import { requireUser, sql } from '../db.js';
 import { performUpload } from '../providers/storage.js';
+import { resolveUploadFileName } from '../providers/duplicatePolicy.js';
 import { sanitizeFileName, normalizeVirtualPath } from '../utils/fileNames.js';
+import { normalizeDuplicatePolicy, validateFileType } from '../utils/filePolicy.js';
+import { startSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -11,18 +14,15 @@ function getMaxFileSize(env) {
 }
 
 function sizeLimitResponse(c, maxFileSize) {
-  return c.json({
-    error: 'File exceeds the configured maximum upload size',
-    code: 'MAX_FILE_SIZE_EXCEEDED',
-    max_file_size: maxFileSize,
-  }, 413);
+  return c.json({ error: 'File exceeds the configured maximum upload size', code: 'MAX_FILE_SIZE_EXCEEDED', max_file_size: maxFileSize }, 413);
 }
 
 async function sendProgress(c, uploadId, uploaded, total) {
   const stub = c.env.UPLOAD_PROGRESS?.get(c.env.UPLOAD_PROGRESS.idFromName(uploadId));
   if (!stub) return;
   c.executionCtx.waitUntil(stub.fetch('https://upload-progress/progress', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ uploadId, uploaded, total }),
   }).catch(() => {}));
 }
@@ -34,34 +34,75 @@ export async function uploadsRoutes(app) {
       const body = await c.req.json();
       const fileName = sanitizeFileName(String(body.fileName || body.file_name || ''), { fallback: '' });
       const size = Number(body.size || 0);
-      const mimeType = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
+      const mimeInput = String(body.mimeType || body.mime_type || 'application/octet-stream').toLowerCase();
       const virtualPath = normalizeVirtualPath(body.virtualPath || body.virtual_path || '/');
       const remoteParentId = body.remoteParentId || body.remote_parent_id || null;
+      const duplicatePolicy = normalizeDuplicatePolicy(body.duplicatePolicy || body.duplicate_policy);
       const maxFileSize = getMaxFileSize(c.env);
+
       if (!fileName) return c.json({ error: 'File name is required' }, 400);
       if (!Number.isSafeInteger(size) || size < 0) return c.json({ error: 'Invalid file size' }, 400);
       if (size > maxFileSize) return sizeLimitResponse(c, maxFileSize);
+      const validation = validateFileType(fileName, mimeInput);
 
       const db = sql(c.env);
       const requested = body.cloud_account_id || body.cloudAccountId || null;
       const accounts = requested
         ? await db`SELECT * FROM cloud_accounts WHERE id=${requested} AND user_id=${user.id} AND status='active' LIMIT 1`
         : await db`SELECT * FROM cloud_accounts WHERE user_id=${user.id} AND status='active' ORDER BY used_space ASC LIMIT 1`;
-      if (!accounts[0]) return c.json({ error: 'No active storage account is connected' }, 409);
+      const account = accounts[0];
+      if (!account) return c.json({ error: 'No active storage account is connected' }, 409);
+
+      const resolved = await resolveUploadFileName(c.env, account, {
+        fileName,
+        virtualPath,
+        remoteParentId,
+        duplicatePolicy,
+      });
 
       const id = crypto.randomUUID();
       const token = crypto.randomUUID();
-      await db`INSERT INTO upload_sessions (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,status) VALUES (${id},${token},${user.id},${accounts[0].id},${fileName},${mimeType},${size},${virtualPath},${remoteParentId},'pending')`;
-      return c.json({ data: { id, upload_id: id, token, session_token: token, provider: accounts[0].provider, cloudAccountId: accounts[0].id, cloud_account_id: accounts[0].id, target_account: { id: accounts[0].id, provider: accounts[0].provider, email: accounts[0].email }, status: 'pending', max_file_size: maxFileSize } }, 201);
-    } catch (error) { return c.json({ error: error?.message || 'Unable to initiate upload' }, error?.status || 400); }
+      await db`
+        INSERT INTO upload_sessions
+          (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,duplicate_policy,status)
+        VALUES
+          (${id},${token},${user.id},${account.id},${resolved.fileName},${validation.mimeType},${size},${virtualPath},${remoteParentId},${resolved.duplicatePolicy},'pending')
+      `;
+      return c.json({
+        data: {
+          id,
+          upload_id: id,
+          token,
+          session_token: token,
+          provider: account.provider,
+          cloudAccountId: account.id,
+          cloud_account_id: account.id,
+          target_account: { id: account.id, provider: account.provider, email: account.email },
+          file_name: resolved.fileName,
+          mime_type: validation.mimeType,
+          duplicate_policy: resolved.duplicatePolicy,
+          status: 'pending',
+          max_file_size: maxFileSize,
+        },
+      }, 201);
+    } catch (error) {
+      return c.json({ error: error?.message || 'Unable to initiate upload', code: error?.code || null }, error?.status || 400);
+    }
   });
 
   app.post('/api/uploads/:uploadId/stream', async (c) => {
     const uploadId = c.req.param('uploadId');
+    let sagaId = null;
     try {
       const user = await requireUser(c);
       const db = sql(c.env);
-      const rows = await db`SELECT us.*,ca.provider,ca.status AS account_status,ca.email,ca.encrypted_credentials,ca.total_space,ca.used_space FROM upload_sessions us JOIN cloud_accounts ca ON ca.id=us.cloud_account_id WHERE us.id=${uploadId} AND us.user_id=${user.id} LIMIT 1`;
+      const rows = await db`
+        SELECT us.*,ca.provider,ca.status AS account_status,ca.email,ca.encrypted_credentials,ca.total_space,ca.used_space
+        FROM upload_sessions us
+        JOIN cloud_accounts ca ON ca.id=us.cloud_account_id
+        WHERE us.id=${uploadId} AND us.user_id=${user.id}
+        LIMIT 1
+      `;
       const session = rows[0];
       if (!session) return c.json({ error: 'Upload session not found' }, 404);
       if (session.status !== 'pending') return c.json({ error: `Upload session is ${session.status}` }, 409);
@@ -76,9 +117,18 @@ export async function uploadsRoutes(app) {
       if (Number.isFinite(contentLength) && contentLength > maxFileSize) return sizeLimitResponse(c, maxFileSize);
       if (Number.isFinite(contentLength) && contentLength !== expectedSize) return c.json({ error: 'Upload content length does not match declared file size' }, 400);
 
+      sagaId = await startSaga(c.env, {
+        userId: user.id,
+        accountId: session.cloud_account_id,
+        operation: 'upload',
+        payload: { uploadId, fileName: session.file_name, virtualPath: session.virtual_path, duplicatePolicy: session.duplicate_policy || 'rename' },
+      });
       await db`UPDATE upload_sessions SET status='uploading',updated_at=NOW() WHERE id=${uploadId}`;
+
       const total = expectedSize;
-      let uploaded = 0; let lastReported = 0; const reader = c.req.raw.body.getReader();
+      let uploaded = 0;
+      let lastReported = 0;
+      const reader = c.req.raw.body.getReader();
       const body = new ReadableStream({
         async start(controller) {
           try {
@@ -112,20 +162,54 @@ export async function uploadsRoutes(app) {
         },
       });
 
-      const result = await performUpload(c.env, { id: session.cloud_account_id, user_id: user.id, email: session.email, provider: session.provider, encrypted_credentials: session.encrypted_credentials, status: session.account_status, total_space: session.total_space, used_space: session.used_space }, {
-        body, fileName: session.file_name, mimeType: session.mime_type, virtualPath: session.virtual_path, remoteParentId: session.remote_parent_id, size: session.size,
+      const account = {
+        id: session.cloud_account_id,
+        user_id: user.id,
+        email: session.email,
+        provider: session.provider,
+        encrypted_credentials: session.encrypted_credentials,
+        status: session.account_status,
+        total_space: session.total_space,
+        used_space: session.used_space,
+      };
+      const result = await performUpload(c.env, account, {
+        body,
+        fileName: session.file_name,
+        mimeType: session.mime_type,
+        virtualPath: session.virtual_path,
+        remoteParentId: session.remote_parent_id,
+        duplicatePolicy: session.duplicate_policy || 'rename',
+        size: session.size,
         onProgress: (bytes) => c.executionCtx.waitUntil(sendProgress(c, uploadId, bytes, total)),
       });
+      await db`UPDATE operation_sagas SET status='remote_succeeded',payload=payload || ${JSON.stringify({ remoteFileId: result.remoteFileId || result.id || null })},updated_at=NOW() WHERE id=${sagaId}`;
 
-      await db`UPDATE upload_sessions SET status='completed',updated_at=NOW() WHERE id=${uploadId}`;
       const remoteId = result.remoteFileId || result.id;
-      if (remoteId) await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${user.id},${session.virtual_path},${result.fileName || session.file_name},FALSE,FALSE,${Number(result.size || session.size || 0)},${result.mimeType || session.mime_type},${session.cloud_account_id},${String(remoteId)},${result.remoteParentId || result.parentId || session.remote_parent_id || null},${result.createdTime || null},${result.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
+      if (remoteId) {
+        await db`
+          INSERT INTO file_metadata
+            (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+          VALUES
+            (${crypto.randomUUID()},${user.id},${session.virtual_path},${result.fileName || session.file_name},FALSE,FALSE,${Number(result.size || session.size || 0)},${result.mimeType || session.mime_type},${session.cloud_account_id},${String(remoteId)},${result.remoteParentId || result.parentId || session.remote_parent_id || null},${result.createdTime || null},${result.modifiedTime || null})
+          ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET file_name=EXCLUDED.file_name,virtual_path=EXCLUDED.virtual_path,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,updated_at=NOW()
+        `;
+      }
+      await db`UPDATE upload_sessions SET status='completed',updated_at=NOW() WHERE id=${uploadId}`;
+      await completeSaga(c.env, sagaId);
       await sendProgress(c, uploadId, total, total);
       return c.json({ data: { success: true, uploadId, file: result } }, 201);
     } catch (error) {
-      try { await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId}`; } catch {}
+      try {
+        await sql(c.env)`UPDATE upload_sessions SET status='failed',updated_at=NOW() WHERE id=${uploadId}`;
+      } catch {}
+      if (sagaId) {
+        try {
+          const message = String(error?.message || error || 'Upload failed');
+          await failSaga(c.env, sagaId, error, message.includes('remote') || message.includes('Postgres') || message.includes('database'));
+        } catch {}
+      }
       const status = error?.code === 'MAX_FILE_SIZE_EXCEEDED' ? 413 : (error?.status || 400);
-      return c.json({ error: error?.message || 'Upload failed' }, status);
+      return c.json({ error: error?.message || 'Upload failed', code: error?.code || null }, status);
     }
   });
 }
