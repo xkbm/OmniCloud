@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { sql } from '../db.js';
 import { getLegacyAdapter } from './legacy.js';
-import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount } from './google.js';
+import { googleDelete, googleDownload, googleRename, googleSetStar, googleCreateFolder, googleUpload, googleFindParent, syncGoogleAccount, googleGetFileMetadata } from './google.js';
 import { googleMove } from './googleMove.js';
 import { googleReplaceFile } from './googleReplace.js';
 import { resolveUploadFileName } from './duplicatePolicy.js';
@@ -38,7 +38,7 @@ export async function performRename(env, account, row, name) {
 export async function performMove(env, account, row, destination) {
   if (account.provider === 'google_drive') return googleMove(env, account, row.remote_file_id, destination.remoteParentId || 'root');
   const { adapter } = await getStorageAdapter(env, account);
-  if (typeof adapter.moveFile !== 'function') throw Object.assign(new Error(`Move is not supported for provider ${account.provider}`), { status: 409 });
+  if (typeof adapter.moveFile !== 'function') throw Object.assign(new Error(`Move is not supported for provider ${account.provider}`), { status: 409, code: 'NATIVE_MOVE_UNSUPPORTED' });
   return adapter.moveFile(row, destination);
 }
 
@@ -52,6 +52,15 @@ export async function performDownload(env, account, row) {
   if (account.provider === 'google_drive') return googleDownload(env, account, row.remote_file_id);
   const { adapter } = await getStorageAdapter(env, account);
   return new Response(await adapter.getDownloadStream(row));
+}
+
+export async function performGetMetadata(env, account, row) {
+  if (account.provider === 'google_drive') {
+    return googleGetFileMetadata(env, account, row.remote_file_id);
+  }
+  const { adapter } = await getStorageAdapter(env, account);
+  if (typeof adapter.getFileDetails !== 'function') throw Object.assign(new Error(`Metadata verification is not supported for provider ${account.provider}`), { status: 409, code: 'METADATA_VERIFY_UNSUPPORTED' });
+  return adapter.getFileDetails(row);
 }
 
 export async function performCreateFolder(env, account, { name, virtualPath, remoteParentId }) {
