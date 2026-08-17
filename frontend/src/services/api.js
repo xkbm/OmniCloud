@@ -130,6 +130,9 @@ export const api = {
 			method: 'POST',
 		});
 	},
+	getStorage() {
+		return request('/storage');
+	},
 	getGoogleIntegrationStatus() {
 		return request('/accounts/google/status');
 	},
