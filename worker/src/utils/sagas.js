@@ -66,7 +66,7 @@ async function reconcileTransferredTree(db, saga, tree) {
   if (!accountRows[0]) throw new Error('Destination storage account no longer exists');
   const records = [tree.root, ...(Array.isArray(tree.nodes) ? tree.nodes : [])];
   for (const node of records) {
-    await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${saga.user_id},${node.destinationPath || '/'},${node.fileName || 'file'},${Boolean(node.isFolder)},FALSE,${Number(node.size || 0)},${node.mimeType || null},${accountId},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,is_folder=EXCLUDED.is_folder,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.modified_time,updated_at=NOW()`;
+    await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${saga.user_id},${node.destinationPath || '/'},${node.fileName || 'file'},${Boolean(node.isFolder)},FALSE,${Number(node.size || 0)},${node.mimeType || null},${accountId},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,is_folder=EXCLUDED.is_folder,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.remote_modified_time,updated_at=NOW()`;
   }
   if (sourceRootId) {
     const rootRows = await db`SELECT virtual_path,file_name FROM file_metadata WHERE id=${sourceRootId} AND user_id=${saga.user_id} LIMIT 1`;
@@ -102,7 +102,6 @@ async function reconcileMove(db, saga, env) {
     await performMove(env, account, { id: sourceRemoteId, file_name: '', is_folder: true, cloud_account_id: account.id, remote_file_id: sourceRemoteId, remote_parent_id: payload.destinationRemoteParentId || null }, { remoteParentId: oldRemoteParentId });
     return;
   }
-
   const virtualFolderId = payload.virtualFolderId;
   if (virtualFolderId) {
     const folder = (await db`SELECT path,parent_path,name FROM virtual_folders WHERE id=${virtualFolderId} AND user_id=${saga.user_id} LIMIT 1`)[0];
@@ -115,27 +114,20 @@ async function reconcileMove(db, saga, env) {
     await db`UPDATE file_metadata SET virtual_path=CASE WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name} THEN ${payload.destinationPath || '/'} ELSE ${newPrefix} || substring(virtual_path from ${oldPrefix.length + 1}) END,updated_at=NOW() WHERE user_id=${saga.user_id} AND (left(virtual_path,char_length(${oldPrefix}))=${oldPrefix} OR (is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name}))`;
     return;
   }
-
   if (payload.tree || payload.crossAccount || payload.transferFallback || payload.copy) { await reconcileTransferredMove(db, saga); return; }
   const rows = saga.file_id ? await db`SELECT id,is_folder,virtual_path,file_name,cloud_account_id FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id} LIMIT 1` : [];
-  const row = rows[0];
-  if (!row) return;
+  const row = rows[0]; if (!row) return;
   const destinationPath = String(payload.destinationVirtualPath || '/');
   const destinationParentId = payload.destinationRemoteParentId || null;
   const oldFolderPrefix = row.is_folder ? `${String(row.virtual_path || '/').replace(/\/$/, '')}/${row.file_name}/` : null;
-  if (row.is_folder && oldFolderPrefix) {
-    const newFolderPrefix = destinationPath.endsWith('/') ? destinationPath : `${destinationPath}/`;
-    await db`UPDATE file_metadata SET virtual_path=CASE WHEN id=${row.id} THEN ${newFolderPrefix} ELSE ${newFolderPrefix} || substring(virtual_path from ${oldFolderPrefix.length + 1}) END,remote_parent_id=CASE WHEN id=${row.id} THEN ${destinationParentId} ELSE remote_parent_id END,updated_at=NOW() WHERE user_id=${saga.user_id} AND cloud_account_id=${row.cloud_account_id} AND (id=${row.id} OR left(virtual_path,char_length(${oldFolderPrefix}))=${oldFolderPrefix})`;
-    return;
-  }
+  if (row.is_folder && oldFolderPrefix) { const newFolderPrefix = destinationPath.endsWith('/') ? destinationPath : `${destinationPath}/`; await db`UPDATE file_metadata SET virtual_path=CASE WHEN id=${row.id} THEN ${newFolderPrefix} ELSE ${newFolderPrefix} || substring(virtual_path from ${oldFolderPrefix.length + 1}) END,remote_parent_id=CASE WHEN id=${row.id} THEN ${destinationParentId} ELSE remote_parent_id END,updated_at=NOW() WHERE user_id=${saga.user_id} AND cloud_account_id=${row.cloud_account_id} AND (id=${row.id} OR left(virtual_path,char_length(${oldFolderPrefix}))=${oldFolderPrefix})`; return; }
   await db`UPDATE file_metadata SET virtual_path=${destinationPath},remote_parent_id=${destinationParentId},updated_at=NOW() WHERE id=${row.id} AND user_id=${saga.user_id}`;
 }
 
 async function reconcileDelete(db, saga) {
   const virtualFolderId = saga.payload?.virtualFolderId;
   if (virtualFolderId) {
-    const folder=(await db`SELECT path,parent_path,name FROM virtual_folders WHERE id=${virtualFolderId} AND user_id=${saga.user_id} LIMIT 1`)[0];
-    if(!folder)return;
+    const folder=(await db`SELECT path,parent_path,name FROM virtual_folders WHERE id=${virtualFolderId} AND user_id=${saga.user_id} LIMIT 1`)[0]; if(!folder)return;
     const prefix=String(folder.path||'/');
     await db`DELETE FROM file_metadata WHERE user_id=${saga.user_id} AND is_folder=TRUE AND ((virtual_path=${folder.parent_path} AND file_name=${folder.name}) OR left(virtual_path,char_length(${prefix}))=${prefix})`;
     await db`DELETE FROM virtual_folders WHERE user_id=${saga.user_id} AND (id=${virtualFolderId} OR left(path,char_length(${prefix}))=${prefix})`;
@@ -149,21 +141,6 @@ export async function reconcilePendingSagas(env, userId = null) {
   const db = sql(env);
   const rows = userId ? await db`SELECT * FROM operation_sagas WHERE user_id=${userId} AND status='pending_reconcile' ORDER BY created_at ASC LIMIT 100` : await db`SELECT * FROM operation_sagas WHERE status='pending_reconcile' ORDER BY created_at ASC LIMIT 100`;
   const results=[];
-  for(const saga of rows){
-    try{
-      switch(saga.operation){
-        case'upload':await reconcileUpload(db,saga);break;
-        case'rename':await reconcileRename(db,saga);break;
-        case'move':await reconcileMove(db,saga,env);break;
-        case'delete':await reconcileDelete(db,saga);break;
-        default:throw new Error(`Unsupported saga operation: ${saga.operation}`);
-      }
-      await completeSaga(env,saga.id);
-      results.push({id:saga.id,operation:saga.operation,status:'completed'});
-    }catch(error){
-      await failSaga(env,saga.id,error,false);
-      results.push({id:saga.id,operation:saga.operation,status:'failed'});
-    }
-  }
+  for(const saga of rows){try{switch(saga.operation){case'upload':await reconcileUpload(db,saga);break;case'rename':await reconcileRename(db,saga);break;case'move':await reconcileMove(db,saga,env);break;case'delete':await reconcileDelete(db,saga);break;default:throw new Error(`Unsupported saga operation: ${saga.operation}`);}await completeSaga(env,saga.id);results.push({id:saga.id,operation:saga.operation,status:'completed'});}catch(error){await failSaga(env,saga.id,error,false);results.push({id:saga.id,operation:saga.operation,status:'failed'});}}
   return results;
 }
