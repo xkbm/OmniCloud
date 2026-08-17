@@ -1,10 +1,6 @@
 import { requireUser, sql } from '../db.js';
-import {
-  performMove,
-  performDownload,
-  performUpload,
-  performDelete,
-} from '../providers/storage.js';
+import { performMove, performDownload, performUpload, performDelete } from '../providers/storage.js';
+import { transferFile as transferCrossBackend } from '../storage/transfer.js';
 import { startSaga, completeSaga, failSaga, updateSaga } from '../utils/sagas.js';
 
 function normalizePath(input = '/') {
@@ -54,7 +50,7 @@ async function resolveDestination(db, userId, source, body) {
       LIMIT 1
     `;
     destination = rows[0] || null;
-    if (!destination) throw Object.assign(new Error('Destination folder not found'), { status: 404 });
+    if (!destination) throw Object.assign(new Error('Destination folder not found'), { status: 404, code: 'DESTINATION_NOT_FOUND' });
   } else if (requestedPath !== null) {
     destinationPath = normalizePath(requestedPath);
     if (destinationPath !== '/') {
@@ -64,88 +60,32 @@ async function resolveDestination(db, userId, source, body) {
         FROM file_metadata fm
         JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
         WHERE fm.user_id = ${userId}
-          AND fm.cloud_account_id = ${source.cloud_account_id}
           AND fm.is_folder = TRUE
           AND (fm.virtual_path || fm.file_name || '/') = ${destinationPath}
         LIMIT 1
       `;
       destination = rows[0] || null;
-      if (!destination) throw Object.assign(new Error(`Destination folder not found: ${destinationPath}`), { status: 404 });
+      if (!destination) throw Object.assign(new Error('Destination folder not found'), { status: 404, code: 'DESTINATION_NOT_FOUND' });
     }
   } else {
-    throw Object.assign(new Error('Destination folder is required'), { status: 400 });
+    throw Object.assign(new Error('Destination folder is required'), { status: 400, code: 'DESTINATION_REQUIRED' });
   }
 
   if (destination) {
-    if (!destination.is_folder) throw Object.assign(new Error('Destination must be a folder'), { status: 400 });
-    if (destination.account_status !== 'active') throw Object.assign(new Error('Destination account is not active'), { status: 409 });
+    if (!destination.is_folder) throw Object.assign(new Error('Destination must be a folder'), { status: 400, code: 'DESTINATION_NOT_FOLDER' });
+    if (destination.account_status !== 'active') throw Object.assign(new Error('Destination account is not active'), { status: 409, code: 'DESTINATION_ACCOUNT_INACTIVE' });
     destinationPath = normalizePath(`${destination.virtual_path || '/'}${destination.file_name}`);
-    if (destination.id === source.id) throw Object.assign(new Error('A file or folder cannot be moved into itself'), { status: 400 });
+    if (destination.id === source.id) throw Object.assign(new Error('A file or folder cannot be moved into itself'), { status: 400, code: 'INVALID_MOVE_TARGET' });
   }
 
   return { destination, destinationPath };
 }
 
-async function transferFile(c, db, user, source, destination, destinationPath, destinationParentId, sagaId) {
-  if (source.is_folder) {
-    throw Object.assign(
-      new Error('Cross-account folder moves require recursive transfer and are not available yet'),
-      { status: 409, code: 'CROSS_ACCOUNT_FOLDER_MOVE_UNSUPPORTED' },
-    );
-  }
-
-  const sourceAccount = accountFromRow(source, user.id);
-  const destinationAccount = accountFromRow(destination, user.id);
-  const download = await performDownload(c.env, sourceAccount, source);
-  if (!(download instanceof Response) || !download.body) {
-    throw Object.assign(new Error('Source file could not be streamed'), { status: 502, code: 'SOURCE_STREAM_UNAVAILABLE' });
-  }
-
-  const result = await performUpload(c.env, destinationAccount, {
-    body: download.body,
-    fileName: source.file_name,
-    mimeType: source.mime_type || 'application/octet-stream',
-    size: Number(source.size || 0),
-    virtualPath: destinationPath,
-    remoteParentId: destinationParentId,
-    duplicatePolicy: 'rename',
-  });
-
-  const remoteId = result?.remoteFileId || result?.id;
-  if (!remoteId) throw Object.assign(new Error('Destination provider did not return a file identifier'), { status: 502, code: 'DESTINATION_WRITE_UNCONFIRMED' });
-
-  await updateSaga(c.env, sagaId, 'remote_succeeded', {
-    sourceRemoteId: source.remote_file_id,
-    destinationAccountId: destination.cloud_account_id,
-    destinationRemoteId: String(remoteId),
-  });
-
-  await performDelete(c.env, sourceAccount, source);
-
-  const newId = crypto.randomUUID();
-  await db`
-    INSERT INTO file_metadata
-      (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
-    VALUES
-      (${newId},${user.id},${destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(remoteId)},${destinationParentId === 'root' ? null : destinationParentId},${result.createdTime || source.remote_created_time || null},${result.modifiedTime || source.remote_modified_time || null})
-    ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
-      virtual_path=EXCLUDED.virtual_path,
-      file_name=EXCLUDED.file_name,
-      is_starred=EXCLUDED.is_starred,
-      size=EXCLUDED.size,
-      mime_type=EXCLUDED.mime_type,
-      remote_parent_id=EXCLUDED.remote_parent_id,
-      remote_modified_time=EXCLUDED.remote_modified_time,
-      updated_at=NOW()
-  `;
-
-  await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${user.id}`;
-  return { id: newId, virtual_path: destinationPath, cloud_account_id: destination.cloud_account_id };
-}
-
 export async function moveRoutes(app) {
   app.post('/api/files/:id/move', async (c) => {
     let sagaId = null;
+    let remoteSucceeded = false;
+
     try {
       const user = await requireUser(c);
       const fileId = c.req.param('id');
@@ -177,6 +117,8 @@ export async function moveRoutes(app) {
         return c.json({ data: { success: true, unchanged: true, file: { id: source.id, virtual_path: currentParentPath } } });
       }
 
+      const crossAccount = Boolean(destination && destination.cloud_account_id !== source.cloud_account_id);
+
       sagaId = await startSaga(c.env, {
         userId: user.id,
         accountId: source.cloud_account_id,
@@ -184,18 +126,52 @@ export async function moveRoutes(app) {
         operation: 'move',
         payload: {
           sourceAccountId: source.cloud_account_id,
+          sourceRemoteId: source.remote_file_id,
+          sourceFileName: source.file_name,
+          sourceMimeType: source.mime_type || null,
+          sourceSize: Number(source.size || 0),
           destinationAccountId: destination?.cloud_account_id || source.cloud_account_id,
           destinationFolderId: destination?.id || null,
           destinationRemoteParentId: destinationParentId,
           destinationPath,
-          crossAccount: Boolean(destination && destination.cloud_account_id !== source.cloud_account_id),
+          crossAccount,
         },
       });
 
-      if (destination && destination.cloud_account_id !== source.cloud_account_id) {
-        const result = await transferFile(c, db, user, source, destination, destinationPath, destinationParentId, sagaId);
+      if (crossAccount) {
+        const result = await transferCrossBackend({
+          env: c.env,
+          userId: user.id,
+          source,
+          destination,
+          destinationPath,
+          destinationParentId,
+          onRemoteSuccess: async (remote) => {
+            remoteSucceeded = true;
+            await updateSaga(c.env, sagaId, 'remote_succeeded', remote);
+          },
+        });
+
+        const newId = crypto.randomUUID();
+        await db`
+          INSERT INTO file_metadata
+            (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time)
+          VALUES
+            (${newId},${user.id},${destinationPath},${result.fileName || source.file_name},FALSE,${Boolean(source.is_starred)},${Number(result.size || source.size || 0)},${result.mimeType || source.mime_type || null},${destination.cloud_account_id},${String(result.remoteFileId)},${result.remoteParentId || null},${result.createdTime || null},${result.modifiedTime || null})
+          ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET
+            virtual_path=EXCLUDED.virtual_path,
+            file_name=EXCLUDED.file_name,
+            is_starred=EXCLUDED.is_starred,
+            size=EXCLUDED.size,
+            mime_type=EXCLUDED.mime_type,
+            remote_parent_id=EXCLUDED.remote_parent_id,
+            remote_created_time=EXCLUDED.remote_created_time,
+            remote_modified_time=EXCLUDED.remote_modified_time,
+            updated_at=NOW()
+        `;
+        await db`DELETE FROM file_metadata WHERE id=${source.id} AND user_id=${user.id}`;
         await completeSaga(c.env, sagaId);
-        return c.json({ data: { success: true, transferred: true, file: result } });
+        return c.json({ data: { success: true, transferred: true, file: { id: newId, virtual_path: destinationPath, cloud_account_id: destination.cloud_account_id } } });
       }
 
       const account = accountFromRow(source, user.id);
@@ -203,6 +179,7 @@ export async function moveRoutes(app) {
         remoteParentId: destinationParentId,
         virtualPath: destinationPath,
       });
+      remoteSucceeded = true;
 
       await updateSaga(c.env, sagaId, 'remote_succeeded', {
         destinationRemoteParentId: destinationParentId,
@@ -241,13 +218,14 @@ export async function moveRoutes(app) {
     } catch (error) {
       if (sagaId) {
         try {
-          await failSaga(c.env, sagaId, error, true);
+          await failSaga(c.env, sagaId, error, remoteSucceeded);
         } catch (sagaError) {
           console.error('[move] failed to update saga:', sagaError);
         }
       }
       console.error('[move] request failed:', error);
-      return c.json({ error: error?.message || 'Move failed', code: error?.code || 'MOVE_FAILED' }, error?.status || 400);
+      const status = [400, 404, 409, 413, 502].includes(Number(error?.status)) ? Number(error.status) : 500;
+      return c.json({ error: 'Move failed', code: error?.code || 'MOVE_FAILED' }, status);
     }
   });
 }
