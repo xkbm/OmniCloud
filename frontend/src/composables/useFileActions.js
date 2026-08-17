@@ -93,7 +93,7 @@ export function useFileActions({
     return selectedFiles.value.length ? selectedFiles.value : (fallbackFile ? [fallbackFile] : []);
   }
 
-  async function waitForTransferJob(jobId) {
+  async function waitForTransferJob(jobId, progressSink = onTransferProgress) {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < TRANSFER_POLL_TIMEOUT_MS) {
@@ -111,8 +111,8 @@ export function useFileActions({
           ? Math.min(100, Math.round((completedNodes / totalNodes) * 100))
           : 0;
 
-      if (typeof onTransferProgress === 'function') {
-        onTransferProgress({ job, percent, completedBytes, totalBytes, completedNodes, totalNodes });
+      if (typeof progressSink === 'function') {
+        progressSink({ job, percent, completedBytes, totalBytes, completedNodes, totalNodes });
       }
 
       if (job.status === 'completed') return job;
@@ -202,6 +202,81 @@ export function useFileActions({
     }
   }
 
+  function targetProgressWeight(target, job = null) {
+    const size = Math.max(0, Number(target?.size || 0));
+    if (size > 0) return size;
+    const nodes = Math.max(0, Number(job?.total_nodes || 0));
+    return nodes > 0 ? nodes : 1;
+  }
+
+  function createAggregateMoveProgress(targets) {
+    const weights = targets.map((target) => ({
+      target,
+      weight: targetProgressWeight(target),
+    }));
+    const totalWeight = weights.reduce((sum, item) => sum + item.weight, 0);
+    let completedWeight = 0;
+
+    const emit = (item, fraction, details = {}) => {
+      const safeFraction = Math.max(0, Math.min(1, Number(fraction) || 0));
+      const aggregatePercent = totalWeight > 0
+        ? Math.min(100, Math.round(((completedWeight + (item.weight * safeFraction)) / totalWeight) * 100))
+        : 0;
+      onTransferProgress?.({
+        ...details,
+        percent: aggregatePercent,
+        completedBytes: Math.round(completedWeight + (item.weight * safeFraction)),
+        totalBytes: totalWeight,
+        completedNodes: Math.round(aggregatePercent ? (aggregatePercent / 100) * targets.length : 0),
+        totalNodes: targets.length,
+        aggregate: true,
+      });
+    };
+
+    return {
+      progressFor(itemIndex, fraction, details = {}) {
+        emit(weights[itemIndex], fraction, details);
+      },
+      complete(itemIndex, details = {}) {
+        completedWeight += weights[itemIndex].weight;
+        emit(weights[itemIndex], 1, details);
+      },
+      totalWeight,
+    };
+  }
+
+  async function moveTargets(targets, moveOne) {
+    const aggregate = createAggregateMoveProgress(targets);
+
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      const response = await moveOne(target, (progress) => {
+        const fraction = progress.totalBytes > 0
+          ? progress.completedBytes / progress.totalBytes
+          : progress.totalNodes > 0
+            ? progress.completedNodes / progress.totalNodes
+            : 0;
+        aggregate.progressFor(index, fraction, progress);
+      });
+
+      aggregate.complete(index, { job: response?.data || null });
+    }
+  }
+
+  async function moveTargetToFolderWithProgress(target, targetFolder, progressSink) {
+    const response = await api.moveFile(target.id, { target_folder_id: targetFolder.id });
+    const transferJobId = response?.data?.transferJobId;
+    if (transferJobId) await waitForTransferJob(transferJobId, progressSink);
+    return response;
+  }
+
+  async function moveTargetToPathWithProgress(target, virtualPath, progressSink) {
+    const response = await api.moveFile(target.id, { virtual_path: virtualPath });
+    const transferJobId = response?.data?.transferJobId;
+    if (transferJobId) await waitForTransferJob(transferJobId, progressSink);
+    return response;
+  }
+
   async function moveFilesToFolder(targets, targetFolder) {
     if (!targets.length || !targetFolder?.is_folder) return;
     if (targetFolder?.capabilities?.move === false) {
@@ -218,9 +293,7 @@ export function useFileActions({
     await runWithProgress(
       targets.length > 1 ? `Moviendo ${targets.length} elementos` : 'Moviendo',
       async () => {
-        for (const target of targets) {
-          await moveTargetToFolder(target, targetFolder);
-        }
+        await moveTargets(targets, (target, progressSink) => moveTargetToFolderWithProgress(target, targetFolder, progressSink));
       },
     );
     clearSelection();
@@ -238,7 +311,7 @@ export function useFileActions({
     await runWithProgress(
       targets.length > 1 ? `Moviendo ${targets.length} elementos` : 'Moviendo',
       async () => {
-        for (const target of targets) await moveTargetToPath(target, virtualPath);
+        await moveTargets(targets, (target, progressSink) => moveTargetToPathWithProgress(target, virtualPath, progressSink));
       },
     );
     clearSelection();
