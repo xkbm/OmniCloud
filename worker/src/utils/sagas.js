@@ -1,5 +1,5 @@
 import { sql } from '../db.js';
-import { performMove } from '../providers/storage.js';
+import { performDelete, performMove } from '../providers/storage.js';
 import { releaseStorageReservation } from '../storage/service.js';
 
 export const SAGA_STATUSES = new Set(['pending_remote', 'remote_succeeded', 'completed', 'failed', 'pending_reconcile']);
@@ -30,6 +30,35 @@ async function releaseSagaReservation(env, saga) {
   const reservationId = saga.payload?.reservationId;
   if (!reservationId) return;
   await releaseStorageReservation(env, reservationId, saga.user_id);
+}
+
+function isRemoteMissingError(error) {
+  const status = Number(error?.status || error?.statusCode || 0);
+  if (status === 404) return true;
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('not_found') || message.includes('not found') || message.includes('does not exist') || message.includes('itemresource') && message.includes('notfound');
+}
+
+async function reconcileSourceDelete(db, saga, env, source) {
+  if (!saga.payload?.sourceDeletePending || !source) return;
+  const accountId = saga.payload?.sourceAccountId || source.cloud_account_id || saga.cloud_account_id;
+  if (!accountId || !saga.payload?.sourceRemoteId) throw new Error('Transfer saga is missing source delete metadata');
+  const account = (await db`SELECT * FROM cloud_accounts WHERE id=${accountId} AND user_id=${saga.user_id} LIMIT 1`)[0];
+  if (!account) throw new Error('Source storage account no longer exists');
+  const sourceRow = {
+    ...source,
+    cloud_account_id: account.id,
+    provider: account.provider,
+    email: account.email,
+    encrypted_credentials: account.encrypted_credentials,
+    account_status: account.status,
+    remote_file_id: saga.payload.sourceRemoteId,
+  };
+  try {
+    await performDelete(env, { ...account, status: account.status }, sourceRow);
+  } catch (error) {
+    if (!isRemoteMissingError(error)) throw error;
+  }
 }
 
 async function reconcileUpload(db, saga, env) {
@@ -118,6 +147,7 @@ async function reconcileVirtualFolderCopy(db, saga, tree) {
         virtual_path=EXCLUDED.virtual_path,
         file_name=EXCLUDED.file_name,
         is_folder=EXCLUDED.is_folder,
+        is_starred=EXCLUDED.is_starred,
         size=EXCLUDED.size,
         mime_type=EXCLUDED.mime_type,
         remote_parent_id=EXCLUDED.remote_parent_id,
@@ -140,6 +170,26 @@ async function reconcileTransferredTree(db, saga, tree, env) {
   const accountRows = await db`SELECT id FROM cloud_accounts WHERE id=${accountId} AND user_id=${saga.user_id} LIMIT 1`;
   if (!accountRows[0]) throw new Error('Destination storage account no longer exists');
   const records = [tree.root, ...(Array.isArray(tree.nodes) ? tree.nodes : [])];
+  if (!saga.payload?.copy && saga.payload?.sourceDeletePending) {
+    const sourceAccountId = saga.payload?.sourceAccountId || saga.cloud_account_id;
+    const sourceAccount = (await db`SELECT * FROM cloud_accounts WHERE id=${sourceAccountId} AND user_id=${saga.user_id} LIMIT 1`)[0];
+    if (!sourceAccount) throw new Error('Source storage account no longer exists');
+    for (const node of [...records].reverse()) {
+      try {
+        await performDelete(env, { ...sourceAccount, status: sourceAccount.status }, {
+          ...node,
+          cloud_account_id: sourceAccount.id,
+          provider: sourceAccount.provider,
+          email: sourceAccount.email,
+          encrypted_credentials: sourceAccount.encrypted_credentials,
+          account_status: sourceAccount.status,
+          remote_file_id: node.sourceRemoteId,
+        });
+      } catch (error) {
+        if (!isRemoteMissingError(error)) throw error;
+      }
+    }
+  }
   for (const node of records) {
     await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${saga.user_id},${node.destinationPath || '/'},${node.fileName || 'file'},${Boolean(node.isFolder)},FALSE,${Number(node.size || 0)},${node.mimeType || null},${accountId},${String(node.destinationRemoteId)},${node.destinationParentId || null},${node.createdTime || null},${node.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,is_folder=EXCLUDED.is_folder,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.remote_modified_time,updated_at=NOW()`;
   }
@@ -162,7 +212,9 @@ async function reconcileTransferredMove(db, saga, env) {
   if (!destinationAccountId || !destinationRemoteId) throw new Error('Transfer saga is missing destination metadata');
   const destinationAccountRows = await db`SELECT id FROM cloud_accounts WHERE id=${destinationAccountId} AND user_id=${saga.user_id} LIMIT 1`;
   if (!destinationAccountRows[0]) throw new Error('Destination storage account no longer exists');
-  await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${saga.user_id},${payload.destinationPath || '/'},${payload.fileName || 'file'},FALSE,FALSE,${Number(payload.size || 0)},${payload.mimeType || null},${destinationAccountId},${String(destinationRemoteId)},${payload.destinationParentId || null},${payload.createdTime || null},${payload.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.remote_modified_time,updated_at=NOW()`;
+  const sourceRows = saga.file_id ? await db`SELECT * FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id} LIMIT 1` : [];
+  await reconcileSourceDelete(db, saga, env, sourceRows[0] || { cloud_account_id: saga.cloud_account_id });
+  await db`INSERT INTO file_metadata (id,user_id,virtual_path,file_name,is_folder,is_starred,size,mime_type,cloud_account_id,remote_file_id,remote_parent_id,remote_created_time,remote_modified_time) VALUES (${crypto.randomUUID()},${saga.user_id},${payload.destinationPath || '/'},${payload.fileName || 'file'},FALSE,FALSE,${Number(payload.size || 0)},${payload.mimeType || null},${destinationAccountId},${String(destinationRemoteId)},${payload.destinationParentId || null},${payload.createdTime || null},${payload.modifiedTime || null}) ON CONFLICT (cloud_account_id,remote_file_id) DO UPDATE SET virtual_path=EXCLUDED.virtual_path,file_name=EXCLUDED.file_name,size=EXCLUDED.size,mime_type=EXCLUDED.mime_type,remote_parent_id=EXCLUDED.remote_parent_id,remote_created_time=EXCLUDED.remote_created_time,remote_modified_time=EXCLUDED.modified_time,updated_at=NOW()`;
   if (!payload.copy && saga.file_id) await db`DELETE FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id}`;
   await releaseSagaReservation(env, saga);
 }
@@ -190,7 +242,7 @@ async function reconcileMove(db, saga, env) {
     await db`UPDATE file_metadata SET virtual_path=CASE WHEN is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name} THEN ${payload.destinationPath || '/'} ELSE ${newPrefix} || substring(virtual_path from ${oldPrefix.length + 1}) END,updated_at=NOW() WHERE user_id=${saga.user_id} AND (left(virtual_path,char_length(${oldPrefix}))=${oldPrefix} OR (is_folder=TRUE AND virtual_path=${folder.parent_path} AND file_name=${folder.name}))`;
     return;
   }
-  if (payload.tree || payload.crossAccount || payload.transferFallback || payload.copy) { await reconcileTransferredMove(db, saga, env); return; }
+  if (payload.tree || payload.crossAccount || payload.transferFallback || payload.copy || payload.sourceDeletePending) { await reconcileTransferredMove(db, saga, env); return; }
   const rows = saga.file_id ? await db`SELECT id,is_folder,virtual_path,file_name,cloud_account_id FROM file_metadata WHERE id=${saga.file_id} AND user_id=${saga.user_id} LIMIT 1` : [];
   const row = rows[0]; if (!row) return;
   const destinationPath = String(payload.destinationVirtualPath || '/');
@@ -217,6 +269,6 @@ export async function reconcilePendingSagas(env, userId = null) {
   const db = sql(env);
   const rows = userId ? await db`SELECT * FROM operation_sagas WHERE user_id=${userId} AND status='pending_reconcile' ORDER BY created_at ASC LIMIT 100` : await db`SELECT * FROM operation_sagas WHERE status='pending_reconcile' ORDER BY created_at ASC LIMIT 100`;
   const results=[];
-  for(const saga of rows){try{switch(saga.operation){case'upload':await reconcileUpload(db,saga,env);break;case'rename':await reconcileRename(db,saga);break;case'move':await reconcileMove(db,saga,env);break;case'delete':await reconcileDelete(db,saga);break;default:throw new Error(`Unsupported saga operation: ${saga.operation}`);}await completeSaga(env,saga.id);results.push({id:saga.id,operation:saga.operation,status:'completed'});}catch(error){await failSaga(env,saga.id,error,false);results.push({id:saga.id,operation:saga.operation,status:'failed'});}}
+  for(const saga of rows){try{switch(saga.operation){case'upload':await reconcileUpload(db,saga,env);break;case'rename':await reconcileRename(db,saga);break;case'move':await reconcileMove(db,saga,env);break;case'delete':await reconcileDelete(db,saga);break;default:throw new Error(`Unsupported saga operation: ${saga.operation}`);}await completeSaga(env,saga.id);results.push({id:saga.id,operation:saga.operation,status:'completed'});}catch(error){await failSaga(env,saga.id,error,true);results.push({id:saga.id,operation:saga.operation,status:'pending_reconcile',error:'RECONCILE_RETRY_PENDING'});}}
   return results;
 }
