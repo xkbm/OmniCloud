@@ -1,0 +1,37 @@
+name: Cloudflare rebalance regression
+
+on:
+  push:
+    branches:
+      - cloudflare-test
+  pull_request:
+    branches:
+      - cloudflare-test
+
+permissions:
+  contents: read
+
+jobs:
+  rebalance-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Worker dependencies
+        run: npm install --ignore-scripts
+        working-directory: worker
+
+      - name: Check rebalance regression syntax
+        run: |
+          node --check worker/test/rebalance-transfer.test.js
+          node --check worker/src/storage/rebalance.js
+          node --check worker/src/storage/runner.js
+
+      - name: Run rebalance to transfer-job regression
+        run: node --test worker/test/rebalance-transfer.test.js
