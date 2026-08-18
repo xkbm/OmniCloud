@@ -30,8 +30,10 @@ jobs:
       - name: Check rebalance regression syntax
         run: |
           node --check worker/test/rebalance-transfer.test.js
+          node --check worker/test/rebalance-failure.test.js
           node --check worker/src/storage/rebalance.js
           node --check worker/src/storage/runner.js
+          node --check worker/src/utils/sagas.js
 
-      - name: Run rebalance to transfer-job regression
-        run: node --test worker/test/rebalance-transfer.test.js
+      - name: Run rebalance transfer and failure regressions
+        run: node --test worker/test/rebalance-transfer.test.js worker/test/rebalance-failure.test.js
