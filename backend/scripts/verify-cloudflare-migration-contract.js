@@ -23,6 +23,12 @@ if (!schema.includes('ADD COLUMN IF NOT EXISTS health_status')) {
 if (!schema.includes('CREATE INDEX IF NOT EXISTS idx_cloud_accounts_health')) {
   throw new Error('schema.sql must create the health index after the compatibility ALTERs');
 }
+if (!script.includes('async function ensurePreexistingCloudAccountsCompatibility()')) {
+  throw new Error('migrator must preflight pre-existing cloud_accounts before schema/index creation');
+}
+if (!script.includes('await ensurePreexistingCloudAccountsCompatibility();')) {
+  throw new Error('migrator must run the cloud_accounts compatibility preflight');
+}
 
 const listMatch = script.match(/const MIGRATIONS = \[([\s\S]*?)\];/);
 if (!listMatch) throw new Error('migrator must declare an explicit MIGRATIONS list');
