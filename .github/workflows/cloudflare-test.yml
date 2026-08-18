@@ -82,7 +82,7 @@ jobs:
       - name: Verify transient storage failover contract
         run: |
           grep -q "STORAGE_TRANSIENT" worker/src/utils/storageErrors.js
-          grep -q "429, 502, 503, 504" worker/src/utils/storageErrors.js
+          grep -Eq "429.*502.*503.*504" worker/src/utils/storageErrors.js
           grep -q "isTransientStorageError" worker/src/routes/uploads.js
           grep -q "excludeBackendIds" worker/src/routes/uploads.js
           grep -q "excludeBackendIds" worker/src/storage/service.js
