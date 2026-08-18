@@ -79,6 +79,14 @@ jobs:
           grep -q "reserveStorage" worker/src/routes/uploads.js
           grep -q "releaseStorageReservation" worker/src/routes/uploads.js
 
+      - name: Diagnose transient storage failover checkout
+        run: |
+          echo "PWD=$(pwd)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          test -f worker/src/utils/storageErrors.js
+          ls -l worker/src/utils/storageErrors.js
+          grep -n "STORAGE_TRANSIENT" worker/src/utils/storageErrors.js
+
       - name: Verify transient storage failover contract
         run: |
           grep -q "STORAGE_TRANSIENT" worker/src/utils/storageErrors.js
