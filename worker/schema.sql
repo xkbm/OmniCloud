@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE cloud_accounts
+  ADD COLUMN IF NOT EXISTS health_status TEXT NOT NULL DEFAULT 'healthy'
+    CHECK (health_status IN ('healthy', 'degraded', 'offline', 'reauth_required'));
+ALTER TABLE cloud_accounts
+  ADD COLUMN IF NOT EXISTS health_checked_at TIMESTAMPTZ;
+ALTER TABLE cloud_accounts
+  ADD COLUMN IF NOT EXISTS health_failure_count INTEGER NOT NULL DEFAULT 0
+    CHECK (health_failure_count >= 0);
+
 CREATE TABLE IF NOT EXISTS file_metadata (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
