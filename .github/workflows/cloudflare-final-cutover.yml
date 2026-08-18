@@ -19,6 +19,8 @@ jobs:
           node-version: 22
       - name: Install backend dependencies
         run: npm install --prefix backend
+      - name: Validate migration contract
+        run: node backend/scripts/verify-cloudflare-migration-contract.js
       - name: Validate Neon secret
         run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
         env:
