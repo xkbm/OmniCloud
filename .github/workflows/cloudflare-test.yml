@@ -68,8 +68,8 @@ jobs:
           node --check worker/src/utils/sagas.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
-      - name: Test storage pool and stream normalization
-        run: node --test worker/test/storage-pool.test.js worker/test/storage-streams.test.js
+      - name: Test storage pool, stream normalization, and transfer reconciliation
+        run: node --test worker/test/storage-pool.test.js worker/test/storage-streams.test.js worker/test/transfer-reconcile.test.js
 
       - name: Verify storage reservation contract
         run: |
