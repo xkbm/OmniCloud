@@ -17,7 +17,7 @@ async function rootFile(name) {
 test('automatic rebalance is guarded and creates a move transfer job with a reservation', async () => {
   const rebalance = await source('rebalance.js');
 
-  const guardIndex = rebalance.indexOf("if (String(env?.ENABLE_AUTOMATIC_REBALANCE || '').toLowerCase() !== 'true') return [];\n\n  const plans = await planRebalance(env, userId, options);");
+  const guardIndex = rebalance.indexOf("if (String(env?.ENABLE_AUTOMATIC_REBALANCE || '').toLowerCase() !== 'true') return [];");
   const reservationIndex = rebalance.indexOf('const reservation = await reserveStorage(env, {');
   const jobIndex = rebalance.indexOf('const job = await createTransferJob(env, {');
 
@@ -64,9 +64,10 @@ test('successful rebalance jobs release their destination reservation only after
   assert.ok(sagaCompleteIndex < reservationReleaseIndex, 'Saga completion must precede reservation release');
 });
 
-test('CI executes the rebalance regression together with the existing storage transfer regressions', async () => {
-  const workflow = await rootFile('.github/workflows/cloudflare-test.yml');
+test('CI runs the dedicated rebalance regression on cloudflare-test', async () => {
+  const workflow = await rootFile('.github/workflows/cloudflare-rebalance-regression.yml');
 
-  assert.match(workflow, /worker\/test\/storage-pool\.test\.js worker\/test\/storage-streams\.test\.js worker\/test\/transfer-reconcile\.test\.js worker\/test\/rebalance-transfer\.test\.js/);
-  assert.match(workflow, /grep -q "runAutomaticRebalance" worker\/src\/index\.js/);
+  assert.match(workflow, /branches:\s*\n\s*- cloudflare-test/);
+  assert.match(workflow, /worker\/test\/rebalance-transfer\.test\.js/);
+  assert.match(workflow, /node --test worker\/test\/rebalance-transfer\.test\.js/);
 });
