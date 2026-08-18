@@ -13,6 +13,11 @@ function numericEnv(env, key, fallback, minimum = 0) {
   return Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 
+function isActiveRebalanceDuplicate(error) {
+  return String(error?.code || '') === '23505'
+    && String(error?.constraint || '') === 'idx_transfer_jobs_rebalance_source_active';
+}
+
 export async function planRebalance(env, userId, options = {}) {
   const highWatermark = Math.min(0.99, numericEnv(env, 'REBALANCE_HIGH_WATERMARK', options.highWatermark ?? DEFAULT_HIGH_WATERMARK));
   const lowWatermark = Math.max(0.01, numericEnv(env, 'REBALANCE_LOW_WATERMARK', options.lowWatermark ?? DEFAULT_LOW_WATERMARK));
@@ -151,6 +156,9 @@ export async function queueRebalanceCycle(env, userId, options = {}) {
       });
       queued.push(job);
     } catch (error) {
+      if (isActiveRebalanceDuplicate(error)) {
+        continue;
+      }
       await db`
         UPDATE storage_reservations
         SET status='released', updated_at=NOW()
