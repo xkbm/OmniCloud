@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   cutover:
-    if: github.event.head_commit.message == 'RUN_FINAL_CUTOVER'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +98,3 @@ jobs:
         run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/ >/dev/null
       - name: Smoke test API
         run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/api/health
-
-# Trigger deployment for the current cloudflare-test revision.
-# The frontend drag-and-drop implementation is included in the checked-out revision.
