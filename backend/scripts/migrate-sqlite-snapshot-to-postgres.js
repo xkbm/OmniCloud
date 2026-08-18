@@ -16,8 +16,20 @@ if (!DATABASE_URL) {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const schemaPath = path.resolve(__dirname, '../../worker/schema.sql');
+const workerRoot = path.resolve(__dirname, '../../worker');
+const schemaPath = path.join(workerRoot, 'schema.sql');
+const migrationsDir = path.join(workerRoot, 'migrations');
 const tempPath = path.join(os.tmpdir(), `omnicloud-snapshot-${randomUUID()}.db`);
+
+const MIGRATIONS = [
+  '2026-08-17-p2.sql',
+  '2026-08-17-p2-upload-policy.sql',
+  '2026-08-17-storage-health.sql',
+  '2026-08-17-storage-reservations.sql',
+  '2026-08-17-transfer-jobs.sql',
+  '2026-08-17-virtual-folders.sql',
+  '2026-08-18-rebalance-idempotency.sql',
+];
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -54,6 +66,15 @@ async function insertRows(table, rows, columns) {
   }
 }
 
+async function applyCloudflareMigrations() {
+  for (const fileName of MIGRATIONS) {
+    const migrationPath = path.join(migrationsDir, fileName);
+    const migration = fs.readFileSync(migrationPath, 'utf8');
+    await client.query(migration);
+    console.log(`Applied Cloudflare migration ${fileName}`);
+  }
+}
+
 try {
   const snapshotResult = await client.query(
     'SELECT db FROM public.omnicloud_sqlite_state WHERE id = 1',
@@ -67,6 +88,7 @@ try {
   const schema = fs.readFileSync(schemaPath, 'utf8');
   await client.query('BEGIN');
   await client.query(schema);
+  await applyCloudflareMigrations();
 
   const tables = [
     'users',
