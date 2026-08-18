@@ -35,6 +35,26 @@ test('automatic rebalance is guarded and creates a move transfer job with a rese
   assert.match(rebalance, /reservationId:\s*reservation\.id/);
 });
 
+test('rebalance jobs are unique per source file while active and duplicate creation does not release the shared reservation', async () => {
+  const rebalance = await source('rebalance.js');
+  const migration = await rootFile('worker/migrations/2026-08-18-rebalance-idempotency.sql');
+
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS idx_transfer_jobs_rebalance_source_active/);
+  assert.match(migration, /source_file_id/);
+  assert.match(migration, /status IN \('queued', 'running', 'paused', 'verifying'\)/);
+  assert.match(migration, /payload->>'rebalance'\)='true'/);
+
+  assert.match(rebalance, /function isActiveRebalanceDuplicate\(error\)/);
+  assert.match(rebalance, /idx_transfer_jobs_rebalance_source_active/);
+  assert.match(rebalance, /if \(isActiveRebalanceDuplicate\(error\)\) \{\s*continue;/s);
+
+  const catchIndex = rebalance.indexOf('} catch (error) {');
+  const duplicateIndex = rebalance.indexOf('if (isActiveRebalanceDuplicate(error))', catchIndex);
+  const releaseIndex = rebalance.indexOf('UPDATE storage_reservations', catchIndex);
+  assert.ok(catchIndex >= 0 && duplicateIndex > catchIndex && releaseIndex > duplicateIndex);
+  assert.ok(!rebalance.slice(duplicateIndex, releaseIndex).includes('releaseStorageReservation'), 'duplicate active rebalance must not release the existing job reservation');
+});
+
 test('rebalance job payload is consumed by the real transfer executor and enters the Saga flow', async () => {
   const rebalance = await source('rebalance.js');
   const runner = await source('runner.js');
