@@ -75,16 +75,32 @@ export async function chooseStorageBackend(env, userId, size, { backendId = null
 }
 
 export async function probeStorageAccount(env, account) {
+  const db = sql(env);
   try {
     if (account.provider === 'google_drive') {
-      await googleRequest(env, account, '/about?fields=user(emailAddress),storageQuota(limit,usage)');
-    } else {
-      const adapter = await getLegacyAdapter(env, account);
-      if (typeof adapter.getStorageSummary !== 'function') {
-        throw Object.assign(new Error(`Health probe is not supported for provider ${account.provider}`), { code: 'HEALTH_PROBE_UNSUPPORTED', status: 501 });
-      }
-      await adapter.getStorageSummary();
+      const about = await googleRequest(env, account, '/about?fields=user(emailAddress),storageQuota(limit,usage)');
+      const totalSpace = Number(about?.storageQuota?.limit || 0);
+      const usedSpace = Number(about?.storageQuota?.usage || 0);
+      await db`
+        UPDATE cloud_accounts
+        SET total_space=${totalSpace}, used_space=${usedSpace}, updated_at=NOW()
+        WHERE id=${account.id} AND user_id=${account.user_id}
+      `;
+      return healthyResult();
     }
+
+    const adapter = await getLegacyAdapter(env, account);
+    if (typeof adapter.getStorageSummary !== 'function') {
+      throw Object.assign(new Error(`Health probe is not supported for provider ${account.provider}`), { code: 'HEALTH_PROBE_UNSUPPORTED', status: 501 });
+    }
+    const summary = await adapter.getStorageSummary();
+    const totalSpace = Number(summary?.totalSpace || account.total_space || 0);
+    const usedSpace = Number(summary?.usedSpace || 0);
+    await db`
+      UPDATE cloud_accounts
+      SET total_space=${totalSpace}, used_space=${usedSpace}, updated_at=NOW()
+      WHERE id=${account.id} AND user_id=${account.user_id}
+    `;
     return healthyResult();
   } catch (error) {
     return nextHealthState(account.health_status || 'healthy', account.health_failure_count || 0, error);
