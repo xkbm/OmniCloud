@@ -106,9 +106,6 @@ async function upsertAccount(env, { userId, email, provider, credentials, totalS
       total_space = EXCLUDED.total_space,
       used_space = EXCLUDED.used_space,
       status = 'active',
-      health_status = 'healthy',
-      health_failure_count = 0,
-      health_checked_at = NOW(),
       updated_at = NOW()
     RETURNING id, user_id, email, provider, encrypted_credentials, total_space, used_space, status, created_at, updated_at
   `;
@@ -293,3 +290,97 @@ export async function accountsRoutes(app) {
     if (!contentType.includes('application/json')) return;
     const payload = await c.res.clone().json().catch(() => null);
     if (!payload?.error) return;
+    console.error('[accounts] sanitized error response:', { status: c.res.status, code: payload.code || 'ACCOUNT_OPERATION_FAILED' });
+    return c.json({ error: 'Account operation failed', code: payload.code || 'ACCOUNT_OPERATION_FAILED' }, c.res.status);
+  });
+
+  app.get('/api/accounts', async (c) => {
+    try {
+      const user = await requireUser(c);
+      const rows = await sql(c.env)`SELECT id,email,provider,total_space,used_space,status,created_at,updated_at FROM cloud_accounts WHERE user_id=${user.id} ORDER BY provider,email`;
+      return c.json({ data: rows.map((account) => ({ ...account, total_space: Number(account.total_space), used_space: Number(account.used_space), free_space: Number(account.total_space) - Number(account.used_space) })) });
+    } catch (error) { return accountErrorResponse(c, error); }
+  });
+
+  for (const provider of ['google', 'onedrive', 'dropbox', 'yandex', 'mega', 's3', 'pcloud']) {
+    app.get(`/api/accounts/${provider}/status`, async (c) => {
+      try { await requireUser(c); return c.json({ data: providerStatus(c.env, provider) }); }
+      catch (error) { return accountErrorResponse(c, error, 'Unable to read account status', 'ACCOUNT_STATUS_FAILED'); }
+    });
+  }
+
+  app.get('/api/accounts/onedrive/connect', async (c) => {
+    try { const user = await requireUser(c); const config = oauthConfig(c.env, 'onedrive'); const state = await saveOAuthState(c.env, user.id, 'onedrive'); const url = new URL(`${config.authority}/authorize`); url.searchParams.set('client_id', config.clientId); url.searchParams.set('response_type', 'code'); url.searchParams.set('redirect_uri', config.redirectUri); url.searchParams.set('response_mode', 'query'); url.searchParams.set('scope', ONEDRIVE_SCOPE); url.searchParams.set('state', state); return c.json({ data: { authorizationUrl: url.toString(), state, redirectUri: config.redirectUri } }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to start OneDrive OAuth', 'ONEDRIVE_OAUTH_START_FAILED'); }
+  });
+
+  app.get('/api/accounts/onedrive/callback', async (c) => {
+    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    try {
+      if (c.req.query('error')) throw Object.assign(new Error('OneDrive OAuth denied'), { code: 'ONEDRIVE_OAUTH_DENIED' });
+      const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'onedrive'); const config = oauthConfig(c.env, 'onedrive'); const tokens = await exchangeCode(config, c.req.query('code') || '', { scope: ONEDRIVE_SCOPE }); const profile = await refreshOneDriveProfile(tokens.access_token);
+      if (!profile.email) throw new Error('Unable to read OneDrive account email');
+      const account = await upsertAccount(c.env, { userId, email: profile.email, provider: 'onedrive', credentials: { provider: 'onedrive', clientId: config.clientId, clientSecret: config.clientSecret, redirectUri: config.redirectUri, tenantId: c.env.ONEDRIVE_TENANT_ID || 'common', refreshToken: tokens.refresh_token || null, accessToken: tokens.access_token || null, expiresIn: tokens.expires_in || null, scope: tokens.scope || ONEDRIVE_SCOPE, tokenType: tokens.token_type || 'Bearer', driveId: profile.driveId, driveType: profile.driveType }, totalSpace: profile.totalSpace, usedSpace: profile.usedSpace });
+      await syncStorageAccount(c.env, userId, account); frontend.searchParams.set('onedrive', 'connected');
+    } catch (error) { console.error('[accounts] OneDrive OAuth callback failed:', error); frontend.searchParams.set('onedrive', 'error'); frontend.searchParams.set('message', 'OneDrive OAuth failed'); }
+    return c.redirect(frontend.toString());
+  });
+
+  app.get('/api/accounts/dropbox/connect', async (c) => {
+    try { const user = await requireUser(c); const config = oauthConfig(c.env, 'dropbox'); const state = await saveOAuthState(c.env, user.id, 'dropbox'); const url = new URL('https://www.dropbox.com/oauth2/authorize'); url.searchParams.set('client_id', config.clientId); url.searchParams.set('response_type', 'code'); url.searchParams.set('redirect_uri', config.redirectUri); url.searchParams.set('token_access_type', 'offline'); url.searchParams.set('scope', DROPBOX_SCOPES.join(' ')); url.searchParams.set('state', state); return c.json({ data: { authorizationUrl: url.toString(), state, redirectUri: config.redirectUri } }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to start Dropbox OAuth', 'DROPBOX_OAUTH_START_FAILED'); }
+  });
+
+  app.get('/api/accounts/dropbox/callback', async (c) => {
+    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    try {
+      if (c.req.query('error')) throw Object.assign(new Error('Dropbox OAuth denied'), { code: 'DROPBOX_OAUTH_DENIED' });
+      const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'dropbox'); const config = oauthConfig(c.env, 'dropbox'); const tokens = await exchangeCode({ ...config, tokenUrl: 'https://api.dropboxapi.com/oauth2/token' }, c.req.query('code') || '');
+      const profile = await getDropboxProfile(tokens.access_token); if (!profile.email) throw new Error('Unable to read Dropbox account email'); if (!tokens.refresh_token) throw new Error('Dropbox did not return a refresh token. Reconnect with offline access enabled.');
+      const account = await upsertAccount(c.env, { userId, email: profile.email, provider: 'dropbox', credentials: { provider: 'dropbox', clientId: config.clientId, clientSecret: config.clientSecret, redirectUri: config.redirectUri, refreshToken: tokens.refresh_token, accessToken: tokens.access_token || null, expiresIn: tokens.expires_in || null, scope: tokens.scope || DROPBOX_SCOPES.join(' '), tokenType: tokens.token_type || 'bearer', accountId: profile.accountId, displayName: profile.displayName }, totalSpace: profile.totalSpace, usedSpace: profile.usedSpace });
+      await syncStorageAccount(c.env, userId, account); frontend.searchParams.set('dropbox', 'connected');
+    } catch (error) { console.error('[accounts] Dropbox OAuth callback failed:', error); frontend.searchParams.set('dropbox', 'error'); frontend.searchParams.set('message', 'Dropbox OAuth failed'); }
+    return c.redirect(frontend.toString());
+  });
+
+  app.get('/api/accounts/yandex/connect', async (c) => {
+    try { const user = await requireUser(c); const config = oauthConfig(c.env, 'yandex'); const state = await saveOAuthState(c.env, user.id, 'yandex'); const url = new URL('https://oauth.yandex.com/authorize'); url.searchParams.set('response_type', 'code'); url.searchParams.set('client_id', config.clientId); url.searchParams.set('redirect_uri', config.redirectUri); url.searchParams.set('scope', YANDEX_SCOPE); url.searchParams.set('state', state); return c.json({ data: { authorizationUrl: url.toString(), state, redirectUri: config.redirectUri } }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to start Yandex OAuth', 'YANDEX_OAUTH_START_FAILED'); }
+  });
+
+  app.get('/api/accounts/yandex/callback', async (c) => {
+    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    try {
+      if (c.req.query('error')) throw Object.assign(new Error('Yandex OAuth denied'), { code: 'YANDEX_OAUTH_DENIED' });
+      const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'yandex'); const config = oauthConfig(c.env, 'yandex'); const tokens = await exchangeCode({ ...config, tokenUrl: 'https://oauth.yandex.com/token' }, c.req.query('code') || ''); const profile = await getYandexProfile(tokens.access_token); const account = await upsertAccount(c.env, { userId, email: profile.email, provider: 'yandex', credentials: { provider: 'yandex', accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, clientId: config.clientId, clientSecret: config.clientSecret, expiresIn: tokens.expires_in || null, tokenType: tokens.token_type || 'bearer', displayName: profile.displayName }, totalSpace: profile.totalSpace, usedSpace: profile.usedSpace });
+      await syncStorageAccount(c.env, userId, account).catch((error) => console.warn('[yandex] initial sync failed:', error?.message || error)); frontend.searchParams.set('yandex', 'connected');
+    } catch (error) { console.error('[accounts] Yandex OAuth callback failed:', error); frontend.searchParams.set('yandex', 'error'); frontend.searchParams.set('message', 'Yandex OAuth failed'); }
+    return c.redirect(frontend.toString());
+  });
+
+  app.post('/api/accounts/mega/connect', async (c) => {
+    try { const user = await requireUser(c); const result = await connectMega(c.env, user.id, await c.req.json().catch(() => ({}))); return c.json({ data: result }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to connect MEGA', 'MEGA_CONNECTION_FAILED'); }
+  });
+
+  app.post('/api/accounts/s3/connect', async (c) => {
+    try { const user = await requireUser(c); const result = await connectS3(c.env, user.id, await c.req.json().catch(() => ({}))); return c.json({ data: result }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to connect S3', 'S3_CONNECTION_FAILED'); }
+  });
+
+  app.post('/api/accounts/pcloud/connect', async (c) => {
+    try { const user = await requireUser(c); const result = await connectPCloud(c.env, user.id, await c.req.json().catch(() => ({}))); return c.json({ data: result }); }
+    catch (error) { return accountErrorResponse(c, error, 'Unable to connect pCloud', 'PCLOUD_CONNECTION_FAILED'); }
+  });
+
+  app.delete('/api/accounts/:id', async (c) => {
+    try {
+      const user = await requireUser(c); const accountId = c.req.param('id'); const db = sql(c.env);
+      const rows = await db`SELECT id FROM cloud_accounts WHERE id=${accountId} AND user_id=${user.id} LIMIT 1`;
+      if (!rows[0]) return c.json({ error: 'Account not found', code:'ACCOUNT_NOT_FOUND' }, 404);
+      await db`DELETE FROM file_metadata WHERE cloud_account_id=${accountId} AND user_id=${user.id}`;
+      await db`DELETE FROM cloud_accounts WHERE id=${accountId} AND user_id=${user.id}`;
+      return c.json({ data: { success: true } });
+    } catch (error) { return accountErrorResponse(c, error); }
+  });
+}
