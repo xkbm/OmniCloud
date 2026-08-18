@@ -108,7 +108,7 @@ async function transferFileNode({ env, userId, source, destination, destinationP
   };
 }
 
-async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource, onProgress, createRoot = true, existingRootRemoteId = null }) {
+async function transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource, onProgress, createRoot = true, existingRootRemoteId = null, onRemoteSuccess }) {
   if (nodes.length > MAX_RECURSIVE_TRANSFER_NODES) {
     throw Object.assign(new Error(`Folder contains too many items for this transfer (maximum ${MAX_RECURSIVE_TRANSFER_NODES})`), { status: 409, code: 'FOLDER_TRANSFER_TOO_LARGE' });
   }
@@ -116,8 +116,8 @@ async function transferTree({ env, userId, source, destination, destinationPath,
   const destinationAccount = accountFromRow(destination, userId);
   const sourceRootPath = `${String(source.virtual_path || '/').replace(/\/$/, '')}/${source.file_name}`.replace(/^\/+/, '/');
   const destinationRootPath = createRoot
-    ? `${destinationPath === '/' ? '' : destinationPath}${source.file_name}/`.replace(/\/+/g, '/')
-    : String(destinationPath || '/').replace(/\/+/g, '/').replace(/\/?$/, '/');
+    ? `${destinationPath === '/' ? '' : destinationPath}${source.file_name}/`.replace(/\\+/g, '/')
+    : String(destinationPath || '/').replace(/\\+/g, '/').replace(/\/?$/, '/');
 
   let rootRemoteId = existingRootRemoteId;
   if (createRoot) {
@@ -142,9 +142,9 @@ async function transferTree({ env, userId, source, destination, destinationPath,
 
     if (node.is_folder) {
       if (node.id === source.id) continue;
-      const targetPath = `${destinationRootPath}${relativeVirtualPath}`.replace(/\/+/g, '/');
+      const targetPath = `${destinationRootPath}${relativeVirtualPath}`.replace(/\\+/g, '/');
       const sourceParentPath = String(node.virtual_path || '/');
-      const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
+      const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\\+/g, '/') === sourceParentPath);
       const parentRemoteId = parentNode ? folderMap.get(parentNode.id) : rootRemoteId;
       if (!parentRemoteId) throw Object.assign(new Error('Destination parent folder mapping is missing'), { status: 502, code: 'DESTINATION_PARENT_UNAVAILABLE' });
       const created = await performCreateFolder(env, destinationAccount, { name: node.file_name, virtualPath: targetPath, remoteParentId: parentRemoteId });
@@ -154,9 +154,9 @@ async function transferTree({ env, userId, source, destination, destinationPath,
       continue;
     }
 
-    const filePath = `${destinationRootPath}${relativeVirtualPath}`.replace(/\/+/g, '/');
+    const filePath = `${destinationRootPath}${relativeVirtualPath}`.replace(/\\+/g, '/');
     const sourceParentPath = String(node.virtual_path || '/');
-    const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\/+/g, '/') === sourceParentPath);
+    const parentNode = ordered.find((candidate) => candidate.is_folder && `${String(candidate.virtual_path || '/')}${candidate.file_name}`.replace(/\\+/g, '/') === sourceParentPath);
     const parentRemoteId = parentNode ? folderMap.get(parentNode.id) : rootRemoteId;
     if (!parentRemoteId) throw Object.assign(new Error('Destination parent folder mapping is missing'), { status: 502, code: 'DESTINATION_PARENT_UNAVAILABLE' });
     const result = await transferFileNode({ env, userId, source: node, destination, destinationPath: filePath, destinationParentId: parentRemoteId, deleteSource: false, onProgress: reportProgress });
@@ -165,31 +165,33 @@ async function transferTree({ env, userId, source, destination, destinationPath,
     results.push({ ...result, isFolder: false });
   }
 
+  const treeResult = { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || 'application/vnd.google-apps.folder' }, nodes: results };
+
   if (deleteSource) {
+    await onRemoteSuccess?.({ tree: treeResult });
     for (const node of [...ordered].reverse()) {
       await performDelete(env, accountFromRow(node, userId), node);
     }
   }
 
-  return { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || 'application/vnd.google-apps.folder' }, nodes: results };
+  return treeResult;
 }
 
 export async function transferFile(options) {
   const { env, userId, source, destination, destinationPath, destinationParentId, onRemoteSuccess, nodes, onProgress } = options;
   if (source.is_folder) {
-    const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes: nodes || [source], deleteSource: true, onProgress });
-    await onRemoteSuccess?.({ tree: result });
+    const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes: nodes || [source], deleteSource: true, onProgress, onRemoteSuccess });
     return result;
   }
-  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: true, onProgress });
+  const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: false, onProgress });
   await onRemoteSuccess?.(result);
+  await performDelete(env, accountFromRow(source, userId), source);
   return result;
 }
 
 export async function transferFolder(options) {
   const { env, userId, source, destination, destinationPath, destinationParentId, nodes, onRemoteSuccess, onProgress } = options;
-  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: true, onProgress });
-  await onRemoteSuccess?.({ tree: result });
+  const result = await transferTree({ env, userId, source, destination, destinationPath, destinationParentId, nodes, deleteSource: true, onProgress, onRemoteSuccess });
   return result;
 }
 
