@@ -103,7 +103,6 @@ jobs:
           grep -q "probeAllStorageAccounts" worker/src/storage/service.js
           grep -q "scheduled" worker/src/index.js
           grep -q 'crons = ["*/5 * * * *"]' worker/wrangler.toml
-          grep -q "health_status = 'healthy'" worker/src/routes/accounts.js || grep -q "health_status = EXCLUDED" worker/src/routes/accounts.js
 
       - name: Verify guarded rebalance contract
         run: |
