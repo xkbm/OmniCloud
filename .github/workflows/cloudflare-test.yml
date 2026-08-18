@@ -68,8 +68,8 @@ jobs:
           node --check worker/src/utils/sagas.js
           node --check backend/scripts/migrate-sqlite-snapshot-to-postgres.js
 
-      - name: Test storage pool, stream normalization, and transfer reconciliation
-        run: node --test worker/test/storage-pool.test.js worker/test/storage-streams.test.js worker/test/transfer-reconcile.test.js
+      - name: Test storage pool, stream normalization, transfer reconciliation, and rebalance
+        run: node --test worker/test/storage-pool.test.js worker/test/storage-streams.test.js worker/test/transfer-reconcile.test.js worker/test/rebalance-transfer.test.js
 
       - name: Verify storage reservation contract
         run: |
@@ -115,6 +115,7 @@ jobs:
           grep -q "createTransferJob" worker/src/storage/rebalance.js
           grep -q "rebalance" worker/src/storage/rebalance.js
           grep -q "runAutomaticRebalance" worker/src/index.js
+          grep -q "idx_transfer_jobs_rebalance_source_active" worker/migrations/2026-08-18-rebalance-idempotency.sql
 
       - name: Verify virtual folder namespace contract
         run: |
