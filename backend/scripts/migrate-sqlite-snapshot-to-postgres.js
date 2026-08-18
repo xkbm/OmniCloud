@@ -55,15 +55,44 @@ function toValue(table, column, value) {
 async function insertRows(table, rows, columns) {
   if (!rows.length) return;
 
-  const quotedColumns = columns.map((column) => `"${column.replaceAll('"', '""')}"`).join(', ');
+  const quotedColumns = columns.map((column) => `\"${column.replaceAll('\"', '\"\"')}\"`).join(', ');
   for (const row of rows) {
     const values = columns.map((column) => toValue(table, column, row[column]));
     const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
     await client.query(
-      `INSERT INTO "${table}" (${quotedColumns}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+      `INSERT INTO \"${table}\" (${quotedColumns}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
       values,
     );
   }
+}
+
+async function ensurePreexistingCloudAccountsCompatibility() {
+  const tableResult = await client.query(`
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'cloud_accounts'
+    LIMIT 1
+  `);
+  if (!tableResult.rowCount) return;
+
+  await client.query(`
+    ALTER TABLE cloud_accounts
+      ADD COLUMN IF NOT EXISTS health_status TEXT NOT NULL DEFAULT 'healthy'
+        CHECK (health_status IN ('healthy', 'degraded', 'offline', 'reauth_required'))
+  `);
+  await client.query(`
+    ALTER TABLE cloud_accounts
+      ADD COLUMN IF NOT EXISTS health_checked_at TIMESTAMPTZ
+  `);
+  await client.query(`
+    ALTER TABLE cloud_accounts
+      ADD COLUMN IF NOT EXISTS health_failure_count INTEGER NOT NULL DEFAULT 0
+        CHECK (health_failure_count >= 0)
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_cloud_accounts_health
+      ON cloud_accounts(user_id, health_status, health_checked_at)
+  `);
 }
 
 async function applyCloudflareMigrations() {
@@ -87,6 +116,7 @@ try {
 
   const schema = fs.readFileSync(schemaPath, 'utf8');
   await client.query('BEGIN');
+  await ensurePreexistingCloudAccountsCompatibility();
   await client.query(schema);
   await applyCloudflareMigrations();
 
@@ -100,7 +130,7 @@ try {
 
   for (const table of tables) {
     const columns = sqlite
-      .prepare(`PRAGMA table_info("${table}")`)
+      .prepare(`PRAGMA table_info(\"${table}\")`)
       .all()
       .map((column) => column.name);
 
@@ -109,7 +139,7 @@ try {
       continue;
     }
 
-    const rows = sqlite.prepare(`SELECT * FROM "${table}"`).all();
+    const rows = sqlite.prepare(`SELECT * FROM \"${table}\"`).all();
     await insertRows(table, rows, columns);
     console.log(`Migrated ${rows.length} rows from ${table}`);
   }
