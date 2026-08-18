@@ -168,7 +168,7 @@ async function transferTree({ env, userId, source, destination, destinationPath,
   const treeResult = { root: { sourceId: source.id, sourceRemoteId: source.remote_file_id, destinationRemoteId: String(rootRemoteId), destinationAccountId: destination.cloud_account_id, destinationPath: destinationRootPath, destinationParentId, fileName: source.file_name, isFolder: true, size: 0, mimeType: source.mime_type || 'application/vnd.google-apps.folder' }, nodes: results };
 
   if (deleteSource) {
-    await onRemoteSuccess?.({ tree: treeResult });
+    await onRemoteSuccess?.({ tree: treeResult, sourceDeletePending: true });
     for (const node of [...ordered].reverse()) {
       await performDelete(env, accountFromRow(node, userId), node);
     }
@@ -184,7 +184,7 @@ export async function transferFile(options) {
     return result;
   }
   const result = await transferFileNode({ env, userId, source, destination, destinationPath, destinationParentId, deleteSource: false, onProgress });
-  await onRemoteSuccess?.(result);
+  await onRemoteSuccess?.({ ...result, sourceDeletePending: true });
   await performDelete(env, accountFromRow(source, userId), source);
   return result;
 }
