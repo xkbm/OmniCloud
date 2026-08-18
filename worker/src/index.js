@@ -25,6 +25,7 @@ import { virtualFolderRoutes } from './routes/virtualFolders.js';
 import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
 import { probeAllStorageAccounts } from './storage/service.js';
+import { runAutomaticRebalance } from './storage/rebalance.js';
 import { sql } from './db.js';
 
 const app = new Hono();
@@ -165,6 +166,9 @@ app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 export async function scheduled(_event, env, ctx) {
   ctx.waitUntil(probeAllStorageAccounts(env).catch((error) => {
     console.error('[storage-health] scheduled probe failed:', error);
+  }));
+  ctx.waitUntil(runAutomaticRebalance(env).catch((error) => {
+    console.error('[rebalance] scheduled cycle failed:', error);
   }));
 }
 
