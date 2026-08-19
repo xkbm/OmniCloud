@@ -22,6 +22,16 @@ function escapeQuery(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+function resumableUploadBody(body, size) {
+  const total = Number(size || 0);
+  if (typeof ReadableStream === 'undefined' || typeof FixedLengthStream === 'undefined') return body;
+  const stream = body instanceof ReadableStream ? body : (typeof body?.getReader === 'function' ? body : null);
+  if (!stream || !Number.isFinite(total) || total <= 0) return body;
+  const fixed = new FixedLengthStream(total);
+  stream.pipeTo(fixed.writable).catch(() => {});
+  return fixed.readable;
+}
+
 async function jsonResponse(response) {
   const text = await response.text();
   let data = null;
@@ -145,7 +155,7 @@ async function listAllDriveFiles(env, account) {
   do {
     const params = new URLSearchParams({ q: "trashed = false and 'me' in owners", fields: 'nextPageToken,files(id,name,mimeType,size,parents,starred,createdTime,modifiedTime)', pageSize: '1000', orderBy: 'folder, name' });
     if (pageToken) params.set('pageToken', pageToken);
-    const data = await googleRequest(env, account, `?${params.toString()}`);
+    const data = await googleRequest(env, account, `/files?${params.toString()}`);
     files.push(...(data.files || []));
     pageToken = data.nextPageToken || '';
   } while (pageToken);
@@ -237,7 +247,7 @@ export async function googleFindParent(env, account, virtualPath) {
   let parentId = 'root';
   for (const segment of segments) {
     const q = `'${escapeQuery(parentId)}' in parents and trashed = false and mimeType = '${FOLDER_MIME}' and name = '${escapeQuery(segment)}'`;
-    const data = await googleRequest(env, account, `?${new URLSearchParams({ q, fields: 'files(id,name)', pageSize: '1' }).toString()}`);
+    const data = await googleRequest(env, account, `/files?${new URLSearchParams({ q, fields: 'files(id,name)', pageSize: '1' }).toString()}`);
     if (!data.files?.[0]) return null;
     parentId = data.files[0].id;
   }
@@ -264,7 +274,7 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
   let response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) },
-    body,
+    body: resumableUploadBody(body, size),
   });
   if (response.status === 401 && credentials.refreshToken) {
     const refreshed = await refreshAccessToken(env, account, credentials);
@@ -276,7 +286,7 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
     if (!retryStart.ok) throw new Error(`Google upload session retry failed (${retryStart.status})`);
     const retryUrl = retryStart.headers.get('Location');
     if (!retryUrl) throw new Error('Google did not return a retry upload URL');
-    response = await fetch(retryUrl, { method: 'PUT', headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) }, body });
+    response = await fetch(retryUrl, { method: 'PUT', headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) }, body: resumableUploadBody(body, size) });
   }
   const result = await jsonResponse(response);
   onProgress?.(size || Number(result.size || 0));

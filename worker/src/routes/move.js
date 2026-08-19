@@ -158,7 +158,9 @@ async function resolveDestination(db, userId, source, body) {
   if (destination) {
     if (!destination.is_folder) throw Object.assign(new Error('Destination must be a folder'), { status: 400, code: 'DESTINATION_NOT_FOLDER' });
     if (destination.account_status !== 'active') throw Object.assign(new Error('Destination account is not active'), { status: 409, code: 'DESTINATION_ACCOUNT_INACTIVE' });
-    destinationPath = normalizePath(destination.virtual_path || destinationPath || '/');
+    destinationPath = destination.virtual_folder_id
+      ? normalizePath(destination.virtual_path || destinationPath || '/')
+      : normalizePath(`${destination.virtual_path || '/'}${destination.file_name}`);
     if (destination.id === source.id) throw Object.assign(new Error('A file or folder cannot be moved into itself'), { status: 400, code: 'INVALID_MOVE_TARGET' });
   }
 
@@ -357,7 +359,7 @@ export async function moveRoutes(app) {
           console.error('[move] failed to update saga:', sagaError);
         }
       }
-      console.error('[move] request failed:', error);
+      console.error('[move] request failed:', error?.message, { code: error?.code || null, status: error?.status || null, cause: error?.cause ? (error.cause?.message || String(error.cause)) : null, causeStatus: error?.cause?.status || null });
       const status = [400, 404, 409, 413, 502].includes(Number(error?.status)) ? Number(error.status) : 500;
       return c.json({ error: 'Move failed', code: error?.code || 'MOVE_FAILED' }, status);
     }

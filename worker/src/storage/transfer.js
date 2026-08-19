@@ -4,6 +4,37 @@ import { toWebStream } from './streams.js';
 export const MAX_RECURSIVE_TRANSFER_NODES = 500;
 const PROGRESS_BYTES_STEP = 8 * 1024 * 1024;
 const PROGRESS_TIME_STEP_MS = 1000;
+const VERIFY_RETRY_CODES = new Set([404, 408, 425, 429, 500, 502, 503, 504]);
+const VERIFY_MAX_ATTEMPTS = 4;
+const VERIFY_RETRY_DELAY_MS = 500;
+
+async function verifyDestinationMetadata({ env, account, row, expectedSize }) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= VERIFY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const verified = await performGetMetadata(env, account, row);
+      const actualSize = Number(verified?.size ?? row.size ?? 0);
+      if (Number.isFinite(expectedSize) && expectedSize >= 0 && Number.isFinite(actualSize) && expectedSize !== actualSize) {
+        throw Object.assign(new Error(`Destination verification reported a size mismatch (expected ${expectedSize}, got ${actualSize}); original file was preserved`), { status: 502, code: 'DESTINATION_SIZE_MISMATCH', expectedSize, actualSize });
+      }
+      return verified;
+    } catch (error) {
+      lastError = error;
+      if (error?.code === 'DESTINATION_SIZE_MISMATCH') throw error;
+      const status = Number(error?.status || error?.statusCode || 0);
+      if (!VERIFY_RETRY_CODES.has(status) || attempt === VERIFY_MAX_ATTEMPTS) {
+        throw Object.assign(new Error('Destination verification failed; original file was preserved'), {
+          status: 502,
+          code: 'DESTINATION_VERIFY_FAILED',
+          cause: error,
+          attempts: attempt,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_DELAY_MS * attempt));
+    }
+  }
+  throw lastError;
+}
 
 function accountFromRow(row, userId) {
   return {
@@ -78,18 +109,8 @@ async function transferFileNode({ env, userId, source, destination, destinationP
     size: Number(result.size || source.size || 0),
   };
 
-  let verified;
-  try {
-    verified = await performGetMetadata(env, destinationAccount, destinationRow);
-  } catch (error) {
-    throw Object.assign(new Error('Destination verification failed; original file was preserved'), { status: 502, code: 'DESTINATION_VERIFY_FAILED', cause: error });
-  }
-
   const expectedSize = Number(source.size || 0);
-  const actualSize = Number(verified?.size ?? destinationRow.size ?? 0);
-  if (Number.isFinite(expectedSize) && expectedSize >= 0 && Number.isFinite(actualSize) && expectedSize !== actualSize) {
-    throw Object.assign(new Error('Destination verification reported a size mismatch; original file was preserved'), { status: 502, code: 'DESTINATION_SIZE_MISMATCH' });
-  }
+  const verified = await verifyDestinationMetadata({ env, account: destinationAccount, row: destinationRow, expectedSize });
 
   if (deleteSource) await performDelete(env, sourceAccount, source);
 
@@ -102,7 +123,7 @@ async function transferFileNode({ env, userId, source, destination, destinationP
     destinationParentId: destinationParentId === 'root' ? null : destinationParentId,
     fileName: destinationRow.file_name,
     mimeType: destinationRow.mime_type,
-    size: actualSize,
+    size: Number(verified?.size ?? destinationRow.size ?? 0),
     createdTime: verified?.createdTime || verified?.created_time || null,
     modifiedTime: verified?.modifiedTime || verified?.modified_time || null,
   };

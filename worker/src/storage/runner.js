@@ -197,10 +197,13 @@ export async function runTransferJob(env, job) {
 
 export async function failTransferJob(env, job, error) {
   try {
+    const cause = error?.cause;
+    const causeMessage = cause ? String(cause?.message || cause) : null;
     await updateTransferJob(env, job.user_id, job.id, {
       status: 'failed',
       errorCode: error?.code || 'TRANSFER_FAILED',
-      errorMessage: 'Transfer job failed',
+      errorMessage: String(error?.message || 'Transfer job failed').slice(0, 2000),
+      payload: causeMessage ? { errorCause: causeMessage.slice(0, 2000), errorCauseStatus: Number(cause?.status || 0) || null } : {},
     });
   } catch (jobError) {
     console.error('[transfer-job] job update failed:', jobError);
