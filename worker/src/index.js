@@ -10,6 +10,7 @@ import {
   logout,
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
+import { aiRoutes } from './routes/ai.js';
 import { allocationRoutes } from './routes/allocation.js';
 import { backgroundMoveRoutes } from './routes/backgroundMove.js';
 import { copyRoutes } from './routes/copy.js';
@@ -161,6 +162,7 @@ await virtualFilesRoutes(app);
 await filesRoutes(app);
 await transferRoutes(app);
 await uploadsRoutes(app);
+await aiRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 

@@ -41,6 +41,30 @@ export class UploadProgress extends DurableObject {
       });
     }
 
+    if (request.method === 'POST' && url.pathname === '/rate-limit/ai') {
+      const bucket = url.searchParams.get('bucket') || 'min';
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') || 10), 500));
+      const windowMs = Math.max(30 * 1000, Number(url.searchParams.get('window') || 60 * 1000));
+      const storageKey = `ai-rate-${bucket}`;
+      const now = Date.now();
+      const current = await this.ctx.storage.get(storageKey) || { count: 0, resetAt: now + windowMs };
+      const windowOpen = current.resetAt > now;
+      const next = windowOpen ? current : { count: 0, resetAt: now + windowMs };
+      next.count += 1;
+      await this.ctx.storage.put(storageKey, next);
+
+      if (next.count > limit) {
+        const retryAfter = Math.max(1, Math.ceil((next.resetAt - now) / 1000));
+        return new Response(JSON.stringify({ allowed: false, retryAfter }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryAfter), 'Cache-Control': 'no-store' },
+        });
+      }
+      return new Response(JSON.stringify({ allowed: true, remaining: Math.max(0, limit - next.count) }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket upgrade', { status: 426 });
 
     const pair = new WebSocketPair();
