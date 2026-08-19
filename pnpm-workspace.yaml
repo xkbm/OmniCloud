@@ -1,0 +1,9 @@
+packages:
+  - backend
+  - frontend
+  - worker
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  better-sqlite3: true
