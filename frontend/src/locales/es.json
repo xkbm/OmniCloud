@@ -425,10 +425,33 @@
     "type": "Tipo",
     "modified": "Modificado"
   },
-  "preview": {
+"preview": {
     "loading": "Cargando vista previa...",
-    "notAvailable": "La vista previa no está disponible para este tipo de archivo.",
+    "notAvailable": "La vista previa no est� disponible para este tipo de archivo.",
     "document": "Vista previa del documento",
     "failed": "No se pudo cargar la vista previa. Algunos archivos de proveedores no son compatibles con la vista previa ligera."
+  },
+  "ai": {
+    "open": "Asistente de IA",
+    "title": "Asistente de IA",
+    "subtitle": "Pregúntame y organizo todos tus archivos",
+    "placeholder": "Escribe un mensaje…",
+    "send": "Enviar",
+    "emptyTitle": "¿Qué quieres hacer?",
+    "emptyHint": "Puedo buscar, mover, renombrar, crear carpetas y organizar todos tus archivos, vengan del servicio que vengan.",
+    "suggestion1": "¿Cuánto espacio me queda?",
+    "suggestion2": "Muéstrame mis archivos recientes",
+    "suggestion3": "Crea una carpeta para mis proyectos",
+    "toolRunning": "Ejecutando {tool}…",
+    "emptyAnswer": "Procesando…",
+    "tool": {
+      "listFiles": "ver archivos",
+      "searchFiles": "buscar archivos",
+      "storageSummary": "resumen de almacenamiento",
+      "createFolder": "crear carpeta",
+      "moveItem": "mover archivos",
+      "renameItem": "renombrar",
+      "deleteItem": "borrar"
+    }
   }
 }

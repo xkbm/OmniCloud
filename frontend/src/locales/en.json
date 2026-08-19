@@ -430,5 +430,28 @@
 		"notAvailable": "Preview is not available for this file type.",
 		"document": "Document preview",
 		"failed": "Preview failed to load. Some provider files are not compatible with lightweight preview."
+	},
+	"ai": {
+		"open": "AI Assistant",
+		"title": "AI Assistant",
+		"subtitle": "Ask me anything — I'll organize all your files",
+		"placeholder": "Type a message…",
+		"send": "Send",
+		"emptyTitle": "What would you like to do?",
+		"emptyHint": "I can search, move, rename, create folders and organize all your files, no matter which service they come from.",
+		"suggestion1": "How much storage do I have left?",
+		"suggestion2": "Show me my recent files",
+		"suggestion3": "Create a folder for my projects",
+		"toolRunning": "Running {tool}…",
+		"emptyAnswer": "Thinking…",
+		"tool": {
+			"listFiles": "listing files",
+			"searchFiles": "searching files",
+			"storageSummary": "storage summary",
+			"createFolder": "creating folder",
+			"moveItem": "moving files",
+			"renameItem": "renaming",
+			"deleteItem": "deleting"
+		}
 	}
 }

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
-import { IconCloudDataConnection, IconChevronRight, IconHelp, IconHome, IconLayoutGrid, IconMenu2, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconStar, IconTrash, IconUsers, IconX, IconClockHour4, IconCloud, IconFolder, IconCloudFilled, IconClockHour4Filled, IconFolderFilled, IconHomeFilled, IconStarFilled, IconUserFilled, IconLanguage, IconLogout, IconBell } from '@tabler/icons-vue';
+import { IconCloudDataConnection, IconChevronRight, IconHelp, IconHome, IconLayoutGrid, IconMenu2, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconStar, IconTrash, IconUsers, IconX, IconClockHour4, IconCloud, IconFolder, IconCloudFilled, IconClockHour4Filled, IconFolderFilled, IconHomeFilled, IconStarFilled, IconUserFilled, IconLanguage, IconLogout, IconBell, IconSparkles } from '@tabler/icons-vue';
 import { useRouter } from 'vue-router';
 import logoUrl from '../assets/logo.webp';
 import { useAccountManagementStore } from '../stores/accountManagement';
@@ -13,6 +13,7 @@ import HelpModal from './HelpModal.vue';
 import ProfileModal from './ProfileModal.vue';
 import LanguageModal from './LanguageModal.vue';
 import UpdatesModal from './UpdatesModal.vue';
+import AIChatModal from './AIChatModal.vue';
 import { api } from '../services/api';
 import { useFileTreeStore } from '../stores/fileTree';
 import { getFileIcon } from '../composables/useFileType.js';
@@ -34,6 +35,7 @@ const isHelpModalOpen = ref(false);
 const isProfileModalOpen = ref(false);
 const isLanguageModalOpen = ref(false);
 const isUpdatesModalOpen = ref(false);
+const isAIChatOpen = ref(false);
 const globalSearchTerm = ref('');
 const globalSearchResults = ref([]);
 const isGlobalSearchOpen = ref(false);
@@ -290,6 +292,7 @@ const profileLinks = [
 		<ProfileModal :open="isProfileModalOpen" :profile-links="profileLinks" @close="closeProfileModal" />
 		<LanguageModal :open="isLanguageModalOpen" @close="closeLanguageModal" />
 		<UpdatesModal :open="isUpdatesModalOpen" @close="closeUpdatesModal" />
+		<AIChatModal :open="isAIChatOpen" @close="isAIChatOpen = false" />
 
 		<header class="grid h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 px-2 sm:gap-4 sm:px-4 lg:grid-cols-[256px_minmax(320px,720px)_1fr] lg:gap-3 lg:px-0 lg:pr-4">
 			<div class="flex min-w-0 items-center gap-2 lg:gap-3 lg:pl-4">
@@ -347,7 +350,10 @@ const profileLinks = [
 				<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :aria-label="t('header.openHelp')" @click="openHelpModal">
 					<IconHelp :size="18" :stroke="2" />
 				</button>
-				<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('updates.buttonLabel')" :aria-label="t('updates.buttonLabel')" @click="openUpdatesModal">
+				<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('ai.open')" :aria-label="t('ai.open')" @click="isAIChatOpen = true">
+				<IconSparkles :size="18" :stroke="2" class="text-[#7c3aed] dark:text-violet-300" />
+			</button>
+			<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('updates.buttonLabel')" :aria-label="t('updates.buttonLabel')" @click="openUpdatesModal">
 					<IconBell :size="18" :stroke="2" />
 				</button>
 				<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('common.settings')">
@@ -401,6 +407,10 @@ const profileLinks = [
 							<component :is="props.currentSection === item.id ? item.activeIcon : item.icon" :size="20" :stroke="props.currentSection === item.id ? 0 : 2" class="shrink-0 transition-transform duration-200 group-hover:scale-110" :class="props.currentSection === item.id ? 'text-[#1a73e8] drop-shadow-sm dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'" />
 							<span>{{ item.label }}</span>
 						</RouterLink>
+						<button type="button" class="group relative flex h-12 items-center gap-3.5 overflow-hidden rounded-2xl px-4 text-[#202124] transition-all duration-200 hover:bg-black/[0.03] hover:pl-5 dark:text-slate-100 dark:hover:bg-white/6" @click="closeMobileNav(); isAIChatOpen = true">
+							<IconSparkles :size="20" :stroke="2" class="shrink-0 text-[#7c3aed] transition-transform duration-200 group-hover:scale-110 dark:text-violet-300" />
+							<span>{{ t('ai.title') }}</span>
+						</button>
 					</nav>
 
 					<div class="mt-4 rounded-[24px] border border-[#dfe6f1] bg-[#f8fafd] p-4 dark:border-slate-700 dark:bg-slate-800/80">
