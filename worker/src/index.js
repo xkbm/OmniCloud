@@ -59,7 +59,7 @@ app.use('/api/*', async (c, next) => {
 
 app.use('/api/*', async (c, next) => {
   try {
-    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || '__Host-omnicloud_session');
     c.set('user', await getUserBySession(c.env, token));
   } catch (error) {
     console.error('Auth session lookup failed:', error);
@@ -112,7 +112,7 @@ app.post('/api/auth/login', async (c) => {
 
 app.post('/api/auth/logout', async (c) => {
   try {
-    await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session'));
+    await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || '__Host-omnicloud_session'));
     return new Response(JSON.stringify({ data: authSummary(c.env, null) }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': authCookie('', c.env, 0) },

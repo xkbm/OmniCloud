@@ -116,12 +116,10 @@ export async function uploadsRoutes(app) {
       const validation = validateFileType(fileName, mimeInput);
 
       const db = sql(c.env);
-      const requested = body.cloud_account_id || body.cloudAccountId || null;
       const selected = await chooseStorageBackend(c.env, user.id, size, {
-        backendId: requested,
         excludeBackendIds,
       });
-      if (!selected) return c.json({ error: requested ? 'Requested storage account is not active' : 'No storage backend has enough healthy capacity for this file', code: requested ? 'INVALID_STORAGE_BACKEND' : 'NO_STORAGE_CAPACITY' }, 409);
+      if (!selected) return c.json({ error: 'No storage backend has enough healthy capacity for this file', code: 'NO_STORAGE_CAPACITY' }, 409);
 
       const accounts = await db`
         SELECT * FROM cloud_accounts
@@ -146,13 +144,12 @@ export async function uploadsRoutes(app) {
         reservationId = reservation.id;
       }
 
-      const token = crypto.randomUUID();
       try {
         await db`
           INSERT INTO upload_sessions
-            (id,token,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,duplicate_policy,status,reservation_id)
+            (id,user_id,cloud_account_id,file_name,mime_type,size,virtual_path,remote_parent_id,duplicate_policy,status,reservation_id)
           VALUES
-            (${id},${token},${user.id},${account.id},${resolved.fileName},${validation.mimeType},${size},${virtualPath},${remoteParentId},${resolved.duplicatePolicy},'pending',${reservationId})
+            (${id},${user.id},${account.id},${resolved.fileName},${validation.mimeType},${size},${virtualPath},${remoteParentId},${resolved.duplicatePolicy},'pending',${reservationId})
         `;
       } catch (error) {
         if (reservationId) await releaseStorageReservation(c.env, reservationId, user.id);
@@ -160,7 +157,7 @@ export async function uploadsRoutes(app) {
       }
 
       return c.json({ data: {
-        id, upload_id: id, token, session_token: token,
+        id, upload_id: id,
         provider: account.provider, cloudAccountId: account.id, cloud_account_id: account.id,
         target_account: { id: account.id, provider: account.provider, email: account.email },
         file_name: resolved.fileName, mime_type: validation.mimeType,

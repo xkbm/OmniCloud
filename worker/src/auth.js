@@ -90,7 +90,7 @@ export async function getUserBySession(env, token) {
   return row;
 }
 
-export function extractSessionToken(request, cookieName = 'omnicloud_session') {
+export function extractSessionToken(request, cookieName = '__Host-omnicloud_session') {
   const header = request.headers.get('Cookie') || '';
   for (const part of header.split(';')) {
     const [name, ...rest] = part.trim().split('=');
@@ -149,7 +149,7 @@ export async function logout(env, token) {
 
 export function authCookie(token, env, maxAgeSeconds) {
   const parts = [
-    `${env.AUTH_COOKIE_NAME || 'omnicloud_session'}=${encodeURIComponent(token)}`,
+    `${env.AUTH_COOKIE_NAME || '__Host-omnicloud_session'}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Strict',
