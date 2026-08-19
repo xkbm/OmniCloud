@@ -171,7 +171,7 @@
 		"renameTooltip": "Rename",
 		"folder": "Folder",
 		"created": "Created",
-		"provider": "Provider",
+		"provider": "Storage service",
 		"remoteId": "Remote ID"
 	},
 	"quota": {
@@ -346,11 +346,22 @@
 		"connecting": "Connecting...",
 		"disconnect": "Disconnect",
 		"disconnecting": "Disconnecting...",
-		"disconnectConfirm": "Disconnect account {email}?",
+		"disconnectConfirm": "Disconnect {provider} ({email})?",
 		"noAccounts": "No accounts connected yet.",
 		"reconnectNotSupported": "Provider {provider} does not support automatic reconnect.",
 		"connectSuccess": "{provider} account connected successfully.",
-		"connectFailed": "Failed to connect {provider} account."
+		"connectFailed": "Failed to connect {provider} account.",
+		"description": "View all cloud accounts, their quotas, then connect or disconnect accounts.",
+		"sync": "Sync",
+		"capacity": "Capacity",
+		"accountsTitle": "Connected accounts",
+		"accountsDescription": "Accounts connected to OmniCloud and their storage usage.",
+		"loadingAccounts": "Loading accounts...",
+		"connectTitle": "Connect account",
+		"connectDescription": "Add a cloud account to see all your files in one place.",
+		"connectingProvider": "Connecting {provider}...",
+		"syncSuccess": "Sync completed.",
+		"accountConnected": "Account connected successfully."
 	},
 	"allocation": {
 		"title": "Storage allocation",

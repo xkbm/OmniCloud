@@ -544,7 +544,22 @@ onMounted(async () => {
 				</div>
 			</section>
 
-			<section class="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]">
+			<div class="flex items-center gap-1 rounded-full border border-[#e0e3e7] bg-white p-1 shadow-[0_10px_32px_rgba(60,64,67,0.06)] dark:border-slate-700 dark:bg-slate-900 sm:w-fit">
+				<button type="button" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition" :class="activeTab === 'overview'
+					? 'bg-[#1a73e8] text-white shadow-sm dark:bg-sky-600'
+					: 'text-[#5f6368] hover:text-[#202124] dark:text-slate-400 dark:hover:text-slate-200'" @click="activeTab = 'overview'">
+					<IconChartPie :size="18" :stroke="1.9" />
+					<span>{{ t('storage.tabOverview') }}</span>
+				</button>
+				<button type="button" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition" :class="activeTab === 'allocation'
+					? 'bg-[#1a73e8] text-white shadow-sm dark:bg-sky-600'
+					: 'text-[#5f6368] hover:text-[#202124] dark:text-slate-400 dark:hover:text-slate-200'" @click="activeTab = 'allocation'">
+					<IconAdjustments :size="18" :stroke="1.9" />
+					<span>{{ t('storage.tabAllocation') }}</span>
+				</button>
+			</div>
+
+			<section v-show="activeTab === 'overview'" class="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]">
 				<div class="rounded-3xl border border-[#dfe6f1] bg-white p-6 shadow-[0_10px_32px_rgba(60,64,67,0.06)] dark:border-slate-700 dark:bg-slate-800">
 					<div class="flex items-center justify-between gap-4">
 						<div>
@@ -570,9 +585,18 @@ onMounted(async () => {
 								</div>
 								<TruncateMarquee as="p" class="mt-0.5 min-w-0 text-xs text-[#5f6368] dark:text-slate-400" :text="account.email || '—'" />
 							</div>
-							<div class="text-right text-xs text-[#5f6368] dark:text-slate-400">
-								<div class="font-medium text-[#202124] dark:text-slate-200">{{ formatBytesStrict(account.used_space || 0) }}</div>
-								<div>{{ formatBytesStrict(account.total_space || 0) }}</div>
+							<div class="flex shrink-0 items-center gap-3">
+								<div class="text-right text-xs text-[#5f6368] dark:text-slate-400">
+									<div class="font-medium text-[#202124] dark:text-slate-200">{{ formatBytesStrict(account.used_space || 0) }}</div>
+									<div>{{ formatBytesStrict(account.total_space || 0) }}</div>
+								</div>
+								<button type="button" class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium disabled:opacity-60 dark:bg-slate-800" :class="isReconnectable(account)
+									? 'border-[#c7dafc] text-[#1a73e8] dark:border-sky-900/50 dark:text-sky-300'
+									: 'border-[#f3c7c4] text-[#c5221f] dark:border-red-900/50 dark:text-red-300'" :disabled="isAccountActionBusy(account)" @click="handleAccountAction(account)">
+									<IconPlugConnected v-if="isReconnectable(account)" :size="15" :stroke="2" />
+									<IconPlugConnectedX v-else :size="15" :stroke="2" />
+									<span>{{ accountActionLabel(account) }}</span>
+								</button>
 							</div>
 						</div>
 					</div>
@@ -592,10 +616,70 @@ onMounted(async () => {
 					<div v-if="actionSuccess" class="mt-4 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{{ actionSuccess }}</div>
 				</div>
 			</section>
+
+			<section v-show="activeTab === 'allocation'" class="rounded-3xl border border-[#dfe6f1] bg-white p-6 shadow-[0_10px_32px_rgba(60,64,67,0.06)] dark:border-slate-700 dark:bg-slate-800">
+				<div class="flex flex-col gap-1">
+					<h2 class="text-lg font-medium text-[#202124] dark:text-slate-100">{{ t('allocation.title') }}</h2>
+					<p class="text-sm text-[#5f6368] dark:text-slate-400">{{ t('allocation.subtitle') }}</p>
+				</div>
+
+				<div v-if="!accounts.length" class="mt-4 rounded-2xl border border-dashed border-[#dadce0] bg-[#f8fafd] px-4 py-6 text-center text-sm text-[#5f6368] dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400">
+					{{ t('allocation.noAccounts') }}
+				</div>
+
+				<template v-else>
+					<div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						<button v-for="option in allocationStrategyOptions" :key="option.key" type="button" class="flex flex-col gap-1 rounded-2xl border p-4 text-left transition" :class="selectedStrategy === option.key
+							? 'border-[#1a73e8] bg-[#e8f0fe] dark:border-sky-500 dark:bg-sky-950/30'
+							: 'border-[#e3e8ee] bg-[#f8fafd] hover:border-[#c7dafc] dark:border-slate-700 dark:bg-slate-800/70 dark:hover:border-sky-900/60'" @click="selectStrategy(option.key)">
+							<span class="flex items-center justify-between gap-2">
+								<span class="text-sm font-semibold" :class="selectedStrategy === option.key ? 'text-[#1a73e8] dark:text-sky-300' : ''">{{ option.label }}</span>
+								<IconCheck v-if="selectedStrategy === option.key" :size="18" :stroke="2.2" class="text-[#1a73e8] dark:text-sky-300" />
+							</span>
+							<span class="text-xs leading-relaxed text-[#5f6368] dark:text-slate-400">{{ option.description }}</span>
+						</button>
+					</div>
+
+					<div class="mt-5 rounded-2xl border border-[#e3e8ee] bg-[#f8fafd] p-4 dark:border-slate-700 dark:bg-slate-800/70" :class="selectedStrategy === 'manual' ? '' : 'opacity-80'">
+						<div class="flex items-center justify-between gap-3">
+							<h3 class="text-sm font-semibold text-[#202124] dark:text-slate-100">{{ t('allocation.orderTitle') }}</h3>
+						</div>
+						<p class="mt-1 text-xs text-[#5f6368] dark:text-slate-400">{{ t('allocation.reorderHint') }}</p>
+
+						<ul class="mt-3 grid gap-2">
+							<li v-for="(account, index) in orderedAllocationAccounts" :key="account.id" draggable="true" class="flex items-center gap-3 rounded-xl border border-[#e3e8ee] bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/70" :class="dragIndex === index ? 'ring-2 ring-[#1a73e8] dark:ring-sky-500' : ''" @dragstart="onDragStart(index)" @dragover="onDragOver(index, $event)" @dragend="onDragEnd">
+								<span class="cursor-grab text-[#9aa0a6] active:cursor-grabbing dark:text-slate-500"><IconGripVertical :size="18" :stroke="1.8" /></span>
+								<span class="grid size-7 shrink-0 place-items-center rounded-full bg-[#e8f0fe] text-xs font-semibold text-[#1a73e8] dark:bg-slate-800 dark:text-sky-300">{{ index + 1 }}</span>
+								<div class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-[#f1f3f4] dark:bg-slate-800">
+									<img v-if="providerIcon(account.provider)" :src="providerIcon(account.provider)" :alt="providerLabel(account.provider)" class="size-4 object-contain" />
+								</div>
+								<div class="min-w-0 flex-1">
+									<TruncateMarquee as="p" class="text-sm font-medium text-[#202124] dark:text-slate-100" :text="account.email" />
+									<p class="text-xs text-[#5f6368] dark:text-slate-400">{{ providerLabel(account.provider) }} · {{ formatBytesStrict(Number(account.total_space) - Number(account.used_space)) }} {{ t('storage.free').toLowerCase() }}</p>
+								</div>
+								<div class="flex shrink-0 items-center gap-1">
+									<button type="button" class="grid size-8 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#f1f3f4] disabled:opacity-40 dark:text-slate-400 dark:hover:bg-slate-800" :disabled="index === 0" :title="t('allocation.moveUp')" @click="moveAccount(index, -1)"><IconArrowUp :size="16" :stroke="2" /></button>
+									<button type="button" class="grid size-8 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#f1f3f4] disabled:opacity-40 dark:text-slate-400 dark:hover:bg-slate-800" :disabled="index === orderedAllocationAccounts.length - 1" :title="t('allocation.moveDown')" @click="moveAccount(index, 1)"><IconArrowDown :size="16" :stroke="2" /></button>
+								</div>
+							</li>
+						</ul>
+					</div>
+
+					<div class="mt-4 flex flex-wrap items-center justify-end gap-3">
+						<span v-if="allocationSaved" class="inline-flex items-center gap-1.5 text-sm text-[#188038] dark:text-emerald-400"><IconCheck :size="16" :stroke="2.2" />{{ t('allocation.saved') }}</span>
+						<button type="button" class="inline-flex items-center gap-2 rounded-full bg-[#1a73e8] px-4 py-2 text-white disabled:opacity-60" :disabled="isSavingAllocation || isAllocationLoading" @click="saveAllocation">
+							<IconDeviceFloppy :size="18" :stroke="2" />
+							<span>{{ isSavingAllocation ? t('allocation.saving') : t('allocation.save') }}</span>
+						</button>
+					</div>
+
+					<p v-if="allocationError" class="mt-3 rounded-2xl bg-[#fce8e6] px-4 py-3 text-sm text-[#c5221f] dark:bg-red-950/40 dark:text-red-300">{{ allocationError }}</p>
+				</template>
+			</section>
 		</div>
 	</DriveShell>
 
-	<MegaConnectModal :open="isMegaModalOpen" :loading="connectingProvider === 'mega'" @close="closeMegaModal" @connect="connectMega" />
-	<PCloudConnectModal :open="isPCloudModalOpen" :loading="connectingProvider === 'pcloud'" @close="closePCloudModal" @connect="connectPCloud" />
-	<S3ConnectModal :open="isS3ModalOpen" :loading="connectingProvider === 's3'" @close="closeS3Modal" @connect="connectS3" />
+	<MegaConnectModal :open="isMegaModalOpen" :is-connecting="connectingProvider === 'mega'" @close="closeMegaModal" @connect="connectMega" />
+	<PCloudConnectModal :open="isPCloudModalOpen" :is-connecting="connectingProvider === 'pcloud'" @close="closePCloudModal" @connect="connectPCloud" />
+	<S3ConnectModal :open="isS3ModalOpen" :is-connecting="connectingProvider === 's3'" @close="closeS3Modal" @connect="connectS3" />
 </template>

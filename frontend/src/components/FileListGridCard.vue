@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { IconStarFilled } from '@tabler/icons-vue';
 import TruncateMarquee from './TruncateMarquee.vue';
-import { formatBytes, formatDate, getModifiedTime, providerIcon, providerLabel } from '../composables/useFormatFile.js';
+import { formatBytes, formatDate, getModifiedTime } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
 import '../utils/internalDragGuard.js';
 
@@ -121,12 +121,6 @@ function handleDrop(event) {
       </div>
       <div class="min-w-0">
         <TruncateMarquee as="p" class="text-sm font-semibold text-[#202124] dark:text-slate-100" :text="displayName" />
-        <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#5f6368] dark:text-slate-400">
-          <div v-if="providerIcon(item.provider)" class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white dark:bg-slate-900/70">
-            <img :src="providerIcon(item.provider)" :alt="providerLabel(item.provider)" class="size-3.5 object-contain" />
-          </div>
-          <TruncateMarquee as="p" class="min-w-0" :text="item.email || t('drive.noOwner')" />
-        </div>
       </div>
       <div class="flex w-full items-center justify-between text-xs text-[#5f6368] dark:text-slate-400">
         <span>{{ formatDate(getModifiedTime(item)) }}</span>

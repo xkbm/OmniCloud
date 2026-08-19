@@ -7,7 +7,7 @@ import DriveShell from '../components/DriveShell.vue';
 import TruncateMarquee from '../components/TruncateMarquee.vue';
 import { useFileTreeStore } from '../stores/fileTree';
 import { useAccountManagementStore } from '../stores/accountManagement';
-import { getModifiedTime, formatDate, providerIcon, providerLabel, formatBytesStrict } from '../composables/useFormatFile.js';
+import { getModifiedTime, formatDate, formatBytesStrict } from '../composables/useFormatFile.js';
 import { useStorageStats } from '../composables/useStorageStats.js';
 
 const { t } = useI18n();
@@ -66,24 +66,17 @@ onMounted(loadPage);
 				</div>
 
 				<div class="overflow-hidden rounded-2xl border border-[#e0e3e7] dark:border-slate-700">
-					<div class="grid min-h-11 grid-cols-[minmax(220px,2fr)_1.1fr_1fr_140px] items-center gap-3 bg-[#f8fafd] px-[18px] text-[13px] text-[#5f6368] dark:bg-slate-900/70 dark:text-slate-400 max-md:grid-cols-[minmax(180px,1.8fr)_1fr_1fr]">
+					<div class="grid min-h-11 grid-cols-[minmax(220px,2fr)_1fr_140px] items-center gap-3 bg-[#f8fafd] px-[18px] text-[13px] text-[#5f6368] dark:bg-slate-900/70 dark:text-slate-400 max-md:grid-cols-[minmax(180px,1.8fr)_1fr]">
 						<span>{{ t('home.fileName') }}</span>
-						<span>{{ t('home.fileOwner') }}</span>
 						<span>{{ t('home.fileModified') }}</span>
 						<span class="max-md:hidden">{{ t('home.fileSize') }}</span>
 					</div>
 
-					<div v-for="file in quickFiles" :key="file.id" class="grid min-h-[52px] grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_minmax(0,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] dark:border-slate-700 max-md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
+					<div v-for="file in quickFiles" :key="file.id" class="grid min-h-[52px] grid-cols-[minmax(0,2fr)_minmax(0,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] dark:border-slate-700 max-md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)]">
 						<span class="flex min-w-0 items-center gap-2.5 text-[#202124] dark:text-slate-100">
 							<IconFileDescription :size="18" :stroke="1.8" class="text-[#5f6368] dark:text-slate-400" />
 							<TruncateMarquee :text="file.display_name || file.file_name" />
 						</span>
-						<div class="flex min-w-0 items-center gap-2 text-[#5f6368] dark:text-slate-400">
-							<div v-if="providerIcon(file.provider)" class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white dark:bg-slate-900/70">
-								<img :src="providerIcon(file.provider)" :alt="providerLabel(file.provider)" class="size-3.5 object-contain" />
-							</div>
-							<TruncateMarquee class="min-w-0" :text="file.email" />
-						</div>
 						<span class="text-[#5f6368] dark:text-slate-400">{{ formatDate(getModifiedTime(file)) }}</span>
 						<span class="text-[#5f6368] dark:text-slate-400 max-md:hidden">{{ formatBytesStrict(file.size) }}</span>
 					</div>

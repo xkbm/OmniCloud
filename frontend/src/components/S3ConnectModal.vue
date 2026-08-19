@@ -3,6 +3,10 @@ import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
+	open: {
+		type: Boolean,
+		default: false,
+	},
 	isConnecting: {
 		type: Boolean,
 		default: false,
@@ -47,7 +51,7 @@ function submitForm() {
 </script>
 
 <template>
-	<div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
+	<div v-if="open" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
 		<form class="max-h-full w-full max-w-lg overflow-y-auto rounded-[28px] border border-[#e0e3e7] bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)] dark:border-slate-700 dark:bg-slate-900" @submit.prevent="submitForm">
 			<div class="mb-2">
 				<h2 class="text-xl font-medium">{{ t('connectModal.s3.title') }}</h2>

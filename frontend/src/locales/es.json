@@ -171,7 +171,7 @@
     "renameTooltip": "Cambiar nombre",
     "folder": "Carpeta",
     "created": "Creado",
-    "provider": "Proveedor",
+    "provider": "Servicio de almacenamiento",
     "remoteId": "ID remoto"
   },
   "quota": {
@@ -346,11 +346,22 @@
     "connecting": "Conectando...",
     "disconnect": "Desconectar",
     "disconnecting": "Desconectando...",
-    "disconnectConfirm": "¿Desconectar la cuenta {email}?",
+    "disconnectConfirm": "¿Desconectar la cuenta {provider} ({email})?",
     "noAccounts": "Aún no hay cuentas conectadas.",
     "reconnectNotSupported": "El proveedor {provider} todavía no admite la reconexión automática.",
     "connectSuccess": "La cuenta de {provider} se conectó correctamente.",
-    "connectFailed": "No se pudo conectar la cuenta de {provider}."
+    "connectFailed": "No se pudo conectar la cuenta de {provider}.",
+    "description": "Consulta todas tus cuentas en la nube, sus cuotas y conecta o desconecta cuentas.",
+    "sync": "Sincronizar",
+    "capacity": "Capacidad",
+    "accountsTitle": "Cuentas conectadas",
+    "accountsDescription": "Cuentas conectadas a OmniCloud y su uso de almacenamiento.",
+    "loadingAccounts": "Cargando cuentas...",
+    "connectTitle": "Conectar cuenta",
+    "connectDescription": "Agrega una cuenta en la nube para ver todos tus archivos en un solo lugar.",
+    "connectingProvider": "Conectando {provider}...",
+    "syncSuccess": "Sincronización completada.",
+    "accountConnected": "Cuenta conectada correctamente."
   },
   "allocation": {
     "title": "Asignación de almacenamiento",
