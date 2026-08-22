@@ -11,6 +11,8 @@ AUTH_SESSION_TTL_HOURS = "336"
 # Raise this only when the Cloudflare account/zone limit has also been raised.
 MAX_FILE_SIZE = "104857600"
 AI_MODEL = "gemini-3.5-flash-lite"
+GOOGLE_CLIENT_ID = "714892895541-r77o96t6ua7hm929gde28vusnn97lrms.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "https://omnicloud-4u.pages.dev/api/accounts/google/callback"
 
 [triggers]
 crons = ["*/5 * * * *"]
