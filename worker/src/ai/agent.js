@@ -1,8 +1,11 @@
 import { normalizeVirtualPath } from '../utils/fileNames.js';
 
 const INTERACTIONS_BASE = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-const MAX_ITERATIONS = 3;
+// Context7 official agent-loop examples use turn_limit 5-15; 3 starved multi-step
+// tasks (search -> search -> act) leaving no turn for the final text answer.
+const MAX_ITERATIONS = 8;
 const MAX_CONTENT_LEN = 4000;
+const SMART_FUZZY_LIMIT = 6;
 
 export const AI_SYSTEM_PROMPT = `Eres el asistente de IA de OmniCloud, un filesystem virtual unificado que reúne archivos de todos los servicios de almacenamiento conectados del usuario (Google Drive, Dropbox, OneDrive, S3, Mega, pCloud, Yandex, etc.). Para ti no existen servicios individuales: solo carpetas y archivos dentro de una única ruta virtual como /Musica/2026/cancion.mp3.
 
@@ -13,7 +16,10 @@ Reglas:
 4. NUNCA borres archivos sin confirmación explícita del usuario. Antes de borrar algo, pregunta y espera un "sí" inequívoco.
 5. Para mover archivos entre carpetas existentes: hazlo autónomamente si es organización lógica (ej. mover fotos a /Imagenes). Si el usuario pide mover a una ruta específica, ejecútalo.
 6. Si una operación falla, explica el error de forma comprensible y sugiere alternativas.
-7. Sé conciso: 2-4 frases por respuesta salvo que el usuario pida más detalle.`;
+7. Sé conciso: 2-4 frases por respuesta salvo que el usuario pida más detalle.
+8. NUNCA inventes rutas: usa SIEMPRE las rutas exactas que devuelven las herramientas. Si el usuario nombra algo de forma imprecisa (ej. "la carpeta de fotos", "el documento de Carlos"), localízalo primero con search_files o list_files y usa la ruta real devuelta.
+9. Cuando una herramienta devuelva "candidates", elige el más relevante según el contexto del usuario y procede con su ruta completa; si la carpeta destino de un movimiento no existe y la intención es organizar, créala primero con create_folder y repite el movimiento.
+10. En cuanto completes lo pedido, responde con tu texto final SIN llamar más herramientas.`;
 
 export const AI_TOOL_DEFS = [
   { name: 'list_files', description: 'Lista los archivos y carpetas de una ruta virtual (por defecto la raíz "/").', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Ruta virtual, p.ej. "/Musica" o "/" (raíz).' } }, required: ['path'] } },
@@ -21,7 +27,7 @@ export const AI_TOOL_DEFS = [
   { name: 'recent_files', description: 'Lista los archivos más recientes del usuario (por fecha de modificación, descendente) en todo el espacio de almacenamiento.', parameters: { type: 'object', properties: { limit: { type: 'integer', description: 'Número máximo de archivos a devolver (por defecto 20).' } } } },
   { name: 'get_storage_summary', description: 'Resumen del espacio de almacenamiento: cuentas conectadas, espacio usado/disponible y recuento de archivos.', parameters: { type: 'object', properties: {} } },
   { name: 'create_folder', description: 'Crea una carpeta nueva en la ruta virtual indicada (crea también las carpetas intermedias si hacen falta).', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Ruta completa de la carpeta nueva, p.ej. "/Musica/2026".' } }, required: ['path'] } },
-  { name: 'move_item', description: 'Mueve un archivo o carpeta a otra ruta virtual. OmniCloud resuelve automáticamente en qué servicio vive el archivo y lo mueve (incluso entre servicios distintos).', parameters: { type: 'object', properties: { source_path: { type: 'string', description: 'Ruta actual del archivo/carpeta, p.ej. "/Descargas/video.mp4".' }, destination_path: { type: 'string', description: 'Ruta de la carpeta destino, p.ej. "/Videos" (no incluye el nombre del archivo).' } }, required: ['source_path', 'destination_path'] } },
+  { name: 'move_item', description: 'Mueve un archivo o carpeta a una carpeta destino. OmniCloud localiza el elemento aunque el nombre sea aproximado y lo mueve entre servicios automáticamente. La carpeta destino debe existir (usa "/" para la raíz) o créala antes con create_folder.', parameters: { type: 'object', properties: { source_path: { type: 'string', description: 'Ruta actual del archivo/carpeta, p.ej. "/Descargas/video.mp4".' }, destination_path: { type: 'string', description: 'Ruta de la carpeta destino, p.ej. "/Videos" (no incluye el nombre del archivo).' } }, required: ['source_path', 'destination_path'] } },
   { name: 'rename_item', description: 'Renombra un archivo o carpeta.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Ruta actual, p.ej. "/Documentos/borrador.txt".' }, new_name: { type: 'string', description: 'Nuevo nombre, p.ej. "final.txt".' } }, required: ['path', 'new_name'] } },
   { name: 'delete_item', description: 'Borra definitivamente un archivo o carpeta. IMPORTANTE: solo llama a esta herramienta después de que el usuario haya confirmado explícitamente que quiere borrar.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Ruta del archivo o carpeta a borrar.' } }, required: ['path'] } },
 ];
@@ -34,14 +40,53 @@ function parentPathOf(path) {
   return parts.length ? `/${parts.join('/')}/` : '/';
 }
 
-async function resolveVirtualItem(db, userId, path) {
-  const norm = normalizeVirtualPath(path);
+function lastSegmentOf(path) {
+  const segments = String(path || '').split('/').filter(Boolean);
+  return segments.length ? segments[segments.length - 1] : '';
+}
+
+// Smart resolution for AI tools: exact path match first, then a
+// case-insensitive fallback on the last segment across virtual folders and/or
+// physical metadata rows. Users name things loosely ("la carpeta de fotos")
+// and models drop path prefixes; literal matching made moves fail or,
+// worse, silently land at root.
+//   -> { found:true, root?:true, type:'vf'|'fm', id, path }
+//   -> { found:false, reason:'not_found'|'ambiguous', candidates:[{label,type}] }
+async function resolveItemSmart(db, userId, rawPath, { kind = 'any' } = {}) {
+  const norm = normalizeVirtualPath(rawPath);
   const bare = norm.replace(/\/+$/, '') || '/';
-  const vf = await db`SELECT id FROM virtual_folders WHERE user_id=${userId} AND path=${norm} LIMIT 1`;
-  if (vf[0]) return { type: 'vf', id: vf[0].id, path: norm };
-  const fm = await db`SELECT id, is_folder FROM file_metadata WHERE user_id=${userId} AND virtual_path || file_name = ${bare} LIMIT 1`;
-  if (fm[0]) return { type: 'fm', id: fm[0].id, path: bare };
-  return null;
+
+  if (bare === '/') return kind === 'folder' ? { found: true, root: true, id: null, path: '/' } : { found: false, reason: 'not_found', candidates: [] };
+
+  if (kind !== 'file') {
+    const vf = await db`SELECT id FROM virtual_folders WHERE user_id=${userId} AND path=${norm} LIMIT 1`;
+    if (vf[0]) return { found: true, type: 'vf', id: vf[0].id, path: norm };
+  }
+  if (kind !== 'folder') {
+    const fm = await db`SELECT id FROM file_metadata WHERE user_id=${userId} AND virtual_path || file_name = ${bare} LIMIT 1`;
+    if (fm[0]) return { found: true, type: 'fm', id: fm[0].id, path: bare };
+  }
+
+  const name = lastSegmentOf(bare);
+  if (!name) return { found: false, reason: 'not_found', candidates: [] };
+
+  const pattern = `%${name.replace(/\\/g, '\\\\').replace(/([%_])/g, '\\$1')}%`;
+  const candidates = [];
+  if (kind !== 'file') {
+    const vfs = await db`SELECT parent_path, name FROM virtual_folders WHERE user_id=${userId} AND name ILIKE ${pattern} ORDER BY char_length(name), name LIMIT ${SMART_FUZZY_LIMIT}`;
+    for (const v of vfs) candidates.push({ label: `${v.parent_path}${v.name}`, type: 'folder' });
+  }
+  if (kind === 'folder') {
+    const fms = await db`SELECT file_name, virtual_path FROM file_metadata WHERE user_id=${userId} AND is_folder=TRUE AND file_name ILIKE ${pattern} ORDER BY char_length(file_name), file_name LIMIT ${SMART_FUZZY_LIMIT}`;
+    for (const f of fms) candidates.push({ label: `${f.virtual_path}${f.file_name}`, type: 'folder' });
+  } else {
+    const fms = await db`SELECT file_name, virtual_path, is_folder FROM file_metadata WHERE user_id=${userId} AND file_name ILIKE ${pattern} ORDER BY char_length(file_name), file_name LIMIT ${SMART_FUZZY_LIMIT}`;
+    for (const f of fms) candidates.push({ label: `${f.virtual_path}${f.file_name}`, type: f.is_folder ? 'folder' : 'file' });
+  }
+  const unique = [...new Map(candidates.map((c) => [c.label.toLowerCase(), c])).values()].slice(0, SMART_FUZZY_LIMIT);
+  if (unique.length === 1) return resolveItemSmart(db, userId, unique[0].label, { kind });
+  if (unique.length > 1) return { found: false, reason: 'ambiguous', candidates: unique };
+  return { found: false, reason: 'not_found', candidates: [] };
 }
 
 function compactRow(row) {
@@ -88,16 +133,58 @@ async function executeTool({ env, user, db, internalFetch }, name, args) {
       return { success: true, path: fullPath };
     }
     case 'move_item': {
-      const item = await resolveVirtualItem(db, user.id, args.source_path);
-      if (!item) return { error: 'No se encontró el archivo o carpeta de origen' };
-      const dest = normalizeVirtualPath(args.destination_path);
-      const { status, body } = await internalFetch(`/api/files/${item.id}/move`, { method: 'POST', body: { virtual_path: dest } });
-      if (status >= 400) return { error: body?.error || 'No se pudo mover' };
-      return { success: true, path: `${dest}${args.source_path.split('/').pop()}` };
+      const src = await resolveItemSmart(db, user.id, args.source_path);
+      if (!src.found) {
+        if (src.reason === 'ambiguous') return { error: `"${args.source_path}" coincide con varios elementos`, candidates: src.candidates, hint: 'Repite el movimiento con la ruta completa exacta del elemento correcto.' };
+        return { error: `No se encontró el archivo o carpeta "${args.source_path}". Prueba a localizarlo con search_files.` };
+      }
+      if (src.root) return { error: 'El origen no puede ser la raíz' };
+      let destToSend;
+      const destNorm = normalizeVirtualPath(args.destination_path || '/');
+      if (destNorm === '/') destToSend = '/';
+      else {
+        const dst = await resolveItemSmart(db, user.id, args.destination_path, { kind: 'folder' });
+        if (!dst.found) {
+          if (dst.reason === 'ambiguous') return { error: `La carpeta destino "${args.destination_path}" es ambigua`, candidates: dst.candidates, hint: 'Indica la carpeta destino con su ruta completa o créala con create_folder.' };
+          return { error: `La carpeta destino "${args.destination_path}" no existe. Créala primero con create_folder(path="${destNorm}") y repite el movimiento.` };
+        }
+        destToSend = dst.root ? '/' : normalizeVirtualPath(dst.path);
+      }
+      // Physical sources: the move endpoint resolves destinations only within
+      // the source's account and silently falls back to root otherwise —
+      // pre-validate here and pass destination_folder_id for an exact match.
+      if (src.type === 'fm' && destToSend !== '/') {
+        const segs = destToSend.replace(/\/+$/, '').split('/').filter(Boolean);
+        const folderName = segs.pop();
+        const parentPath = segs.length ? `/${segs.join('/')}/` : '/';
+        let destinationIdToSend = null;
+        const sameAccountDest = folderName ? (await db`SELECT id FROM file_metadata WHERE user_id=${user.id} AND cloud_account_id=(SELECT cloud_account_id FROM file_metadata WHERE id=${src.id}) AND is_folder=TRUE AND virtual_path=${parentPath} AND file_name=${folderName} LIMIT 1`)[0] : null;
+        if (sameAccountDest) {
+          destinationIdToSend = sameAccountDest.id;
+        } else {
+          // Dual-read fallback: after P1 migration folders live only in virtual_folders.
+          const vfMatch = folderName ? (await db`SELECT id FROM virtual_folders WHERE user_id=${user.id} AND parent_path=${parentPath} AND name=${folderName} LIMIT 1`)[0] : null;
+          if (vfMatch) {
+            const vfmSameAccount = (await db`SELECT vfm.cloud_account_id FROM virtual_folder_materializations vfm WHERE vfm.virtual_folder_id=${vfMatch.id} AND vfm.user_id=${user.id} AND vfm.status='active' AND vfm.cloud_account_id=(SELECT cloud_account_id FROM file_metadata WHERE id=${src.id}) LIMIT 1`)[0];
+            if (vfmSameAccount) destinationIdToSend = vfMatch.id;
+          }
+        }
+        if (!destinationIdToSend) return { error: `La carpeta "${destToSend}" no está disponible en la cuenta donde vive ese archivo. Créala ahí con create_folder e inténtalo de nuevo.` };
+        const { status, body } = await internalFetch(`/api/files/${src.id}/move`, { method: 'POST', body: { destination_folder_id: destinationIdToSend } });
+        if (status >= 400) return { error: body?.error || 'No se pudo mover' };
+      } else {
+        const { status, body } = await internalFetch(`/api/files/${src.id}/move`, { method: 'POST', body: { virtual_path: destToSend } });
+        if (status >= 400) return { error: body?.error || 'No se pudo mover' };
+      }
+      const movedName = src.path.split('/').filter(Boolean).pop();
+      return { success: true, moved_to: `${destToSend === '/' ? '/' : destToSend}${movedName}` };
     }
     case 'rename_item': {
-      const item = await resolveVirtualItem(db, user.id, args.path);
-      if (!item) return { error: 'No se encontró el archivo o carpeta' };
+      const item = await resolveItemSmart(db, user.id, args.path);
+      if (!item.found) {
+        if (item.reason === 'ambiguous') return { error: `"${args.path}" coincide con varios elementos`, candidates: item.candidates, hint: 'Indica la ruta completa exacta del elemento a renombrar.' };
+        return { error: `No se encontró el archivo o carpeta "${args.path}".` };
+      }
       const newName = String(args.new_name || '').trim();
       if (!newName) return { error: 'El nombre nuevo no puede estar vacío' };
       const { status, body } = await internalFetch(`/api/files/${item.id}/rename`, { method: 'PATCH', body: { name: newName } });
@@ -105,8 +192,11 @@ async function executeTool({ env, user, db, internalFetch }, name, args) {
       return { success: true };
     }
     case 'delete_item': {
-      const item = await resolveVirtualItem(db, user.id, args.path);
-      if (!item) return { error: 'No se encontró el archivo o carpeta' };
+      const item = await resolveItemSmart(db, user.id, args.path);
+      if (!item.found) {
+        if (item.reason === 'ambiguous') return { error: `"${args.path}" coincide con varios elementos`, candidates: item.candidates, hint: 'Indica la ruta completa exacta del elemento a borrar.' };
+        return { error: `No se encontró el archivo o carpeta "${args.path}".` };
+      }
       const { status, body } = await internalFetch(`/api/files/${item.id}`, { method: 'DELETE' });
       if (status >= 400) return { error: body?.error || 'No se pudo borrar' };
       return { success: true };
