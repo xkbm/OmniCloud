@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconLoader2, IconSend, IconSparkles, IconUserFilled, IconX } from '@tabler/icons-vue';
+import { IconCheck, IconLoader2, IconSend, IconSparkles, IconUserFilled, IconX } from '@tabler/icons-vue';
 import { useChatStore } from '../stores/chatStore';
 
 const props = defineProps({
@@ -21,6 +21,17 @@ const suggestions = computed(() => [
 	t('ai.suggestion2'),
 	t('ai.suggestion3'),
 ]);
+
+const followUpSuggestions = computed(() => [
+	t('ai.suggestion4'),
+	t('ai.suggestion5'),
+	t('ai.suggestion6'),
+]);
+
+const showFollowUpSuggestions = computed(() => (
+	!chatStore.isStreaming
+	&& chatStore.messages.some((message) => message.role === 'assistant' && !message.streaming)
+));
 
 const toolLabels = {
 	list_files: 'ai.tool.listFiles',
@@ -66,7 +77,6 @@ watch(
 	() => props.open,
 	(open) => {
 		if (open) {
-			chatStore.loadHistory();
 			scrollToBottom();
 		}
 	},
@@ -80,8 +90,8 @@ watch(
 
 <template>
 	<Transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition duration-150 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
-		<div v-if="open" class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 px-4 py-8 backdrop-blur-sm" @click.self="closeModal">
-			<div class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-[#dfe6f1] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-4rem)] sm:rounded-[30px] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_28px_80px_rgba(2,6,23,0.65)]">
+		<div v-if="open" class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 px-4 py-8 backdrop-blur-sm max-sm:items-end max-sm:p-0" @click.self="closeModal">
+			<div class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-[#dfe6f1] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-4rem)] sm:rounded-[30px] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_28px_80px_rgba(2,6,23,0.65)] max-sm:h-[94dvh] max-sm:max-h-[94dvh] max-sm:rounded-b-none max-sm:rounded-t-[28px] max-sm:border-b-0">
 				<button type="button" class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full text-[#5f6368] transition hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10" :aria-label="t('common.close')" @click="closeModal">
 					<IconX :size="20" :stroke="2" />
 				</button>
@@ -122,8 +132,22 @@ watch(
 								</span>
 								<div class="max-w-[85%]">
 									<div class="rounded-3xl px-4 py-3 text-sm leading-6" :class="message.role === 'user' ? 'rounded-br-lg bg-gradient-to-r from-[#1a73e8] to-[#4f8ff7] text-white shadow-[0_10px_24px_rgba(26,115,232,0.22)]' : 'rounded-bl-lg border border-[#e7edf6] bg-[#f8fafd] text-[#202124] dark:border-slate-800 dark:bg-slate-800/70 dark:text-slate-100'">
-										<p class="whitespace-pre-wrap break-words">{{ message.content || (message.streaming ? '' : t('ai.emptyAnswer')) }}</p>
-										<span v-if="message.streaming" class="inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current opacity-70" />
+										<p v-if="message.content || !message.streaming" class="whitespace-pre-wrap break-words">{{ message.content || t('ai.emptyAnswer') }}</p>
+										<div v-else-if="!message.toolName" class="flex items-center gap-1.5 py-0.5" aria-hidden="true">
+											<span class="size-2 animate-bounce rounded-full bg-[#1a73e8] dark:bg-blue-300" style="animation-delay: 0ms;" />
+											<span class="size-2 animate-bounce rounded-full bg-[#1a73e8] dark:bg-blue-300" style="animation-delay: 150ms;" />
+											<span class="size-2 animate-bounce rounded-full bg-[#1a73e8] dark:bg-blue-300" style="animation-delay: 300ms;" />
+										</div>
+										<span v-if="message.streaming && message.content" class="inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-current opacity-70" />
+									</div>
+									<div v-if="message.toolLog && message.toolLog.some((entry) => entry.status === 'done')" class="mt-1.5 flex max-w-full flex-wrap gap-1.5">
+										<template v-for="(entry, entryIndex) in message.toolLog" :key="`${entry.name}-${entryIndex}`">
+											<span v-if="entry.status === 'done'" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" :class="entry.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300'">
+												<IconCheck v-if="entry.ok" :size="12" :stroke="2.2" />
+												<IconX v-else :size="12" :stroke="2.2" />
+												<span>{{ toolLabel(entry.name) }}</span>
+											</span>
+										</template>
 									</div>
 									<div v-if="message.streaming && message.toolName" class="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[#eef2f7] px-3 py-1 text-xs text-[#5f6368] dark:bg-slate-800 dark:text-slate-400">
 										<IconLoader2 :size="12" :stroke="2" class="animate-spin" />
@@ -135,6 +159,12 @@ watch(
 								</span>
 							</div>
 						</template>
+
+						<div v-if="showFollowUpSuggestions" class="flex flex-wrap justify-center gap-2 pb-2 pt-1">
+							<button v-for="suggestion in followUpSuggestions" :key="suggestion" type="button" class="rounded-full border border-[#dfe6f1] bg-[#f8fafd] px-4 py-2 text-sm text-[#202124] transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_10px_20px_rgba(26,115,232,0.12)] dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:border-blue-400/40 dark:hover:bg-slate-800" @click="useSuggestion(suggestion)">
+								{{ suggestion }}
+							</button>
+						</div>
 					</div>
 
 					<div class="border-t border-[#eef2f7] p-4 dark:border-slate-800 sm:p-5">

@@ -77,10 +77,12 @@
   },
   "header": {
     "searchPlaceholder": "Buscar en OmniCloud",
+    "searchShortcut": "Buscar (Ctrl+K)",
     "clearSearch": "Borrar búsqueda",
     "searchLoading": "Buscando...",
     "searchNoResults": "No se encontraron resultados.",
     "openNav": "Abrir menú de navegación",
+    "more": "Más",
     "closeNav": "Cerrar menú de navegación",
     "openProfile": "Abrir perfil del creador",
     "openHelp": "Abrir ayuda",
@@ -321,7 +323,10 @@
     "cancel": "Cancelar",
     "dismiss": "Cerrar",
     "minimize": "Minimizar",
-    "expand": "Expandir"
+    "expand": "Expandir",
+    "reconnectAccount": "Reconectar cuenta",
+    "reconnectProvider": "Reconectar {provider}",
+    "goToStorage": "Ir a Almacenamiento"
   },
   "language": {
     "title": "Elegir idioma",
@@ -442,6 +447,9 @@
     "suggestion1": "¿Cuánto espacio me queda?",
     "suggestion2": "Muéstrame mis archivos recientes",
     "suggestion3": "Crea una carpeta para mis proyectos",
+    "suggestion4": "Busca mis facturas",
+    "suggestion5": "Organiza mis imágenes en carpetas",
+    "suggestion6": "Resume mi almacenamiento",
     "toolRunning": "Ejecutando {tool}…",
     "emptyAnswer": "Procesando…",
     "tool": {

@@ -42,6 +42,10 @@ function isTransientUploadError(error) {
 	return error?.code === 'STORAGE_TRANSIENT' || [429, 502, 503, 504].includes(Number(error?.status));
 }
 
+function errorMeta(error) {
+	return { errorCode: error?.code || null, errorProvider: error?.provider || null };
+}
+
 function isCancellable(operation) {
 	return ['upload', 'download'].includes(operation?.type) && ['pending', 'uploading', 'downloading'].includes(operation?.status);
 }
@@ -173,7 +177,7 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 				this.updateUpload(queueItem.id, { progress_percentage: 100, status: 'completed' });
 				return result;
 			} catch (error) {
-				this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
+				this.updateUpload(queueItem.id, { status: 'failed', error: error.message, ...errorMeta(error) });
 				throw error;
 			}
 		},
@@ -214,7 +218,7 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 						this.updateUpload(queueItem.id, { status: 'cancelled', error: null });
 						return;
 					}
-					this.updateUpload(queueItem.id, { status: 'failed', error: error.message });
+					this.updateUpload(queueItem.id, { status: 'failed', error: error.message, ...errorMeta(error) });
 					if (batchTotal === 1) throw error;
 				}
 			}
@@ -285,7 +289,7 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 				}
 
 				if (lastError && !isAbortError(lastError) && !queueItem.abortController.signal.aborted) {
-					this.updateUpload(queueItem.id, { status: 'failed', error: lastError.message, retryCount: MAX_TRANSIENT_UPLOAD_RETRIES });
+					this.updateUpload(queueItem.id, { status: 'failed', error: lastError.message, retryCount: MAX_TRANSIENT_UPLOAD_RETRIES, ...errorMeta(lastError) });
 				}
 			}
 		},

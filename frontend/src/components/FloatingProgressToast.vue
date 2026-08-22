@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import {
 	IconArrowRight,
 	IconCheck,
@@ -12,12 +13,25 @@ import {
 	IconFilter2X,
 	IconFolderPlus,
 	IconLoader2,
+	IconPlugConnectedX,
 	IconTrash,
 	IconUpload,
 	IconX,
 } from '@tabler/icons-vue';
+import { connectOAuthProvider, isOAuthProvider } from '../utils/providerConnect';
 
 const { t } = useI18n();
+const router = useRouter();
+
+const providerNames = {
+	google_drive: 'Google Drive',
+	onedrive: 'OneDrive',
+	dropbox: 'Dropbox',
+	yandex: 'Yandex',
+	mega: 'MEGA',
+	s3: 'S3',
+	pcloud: 'pCloud',
+};
 
 const props = defineProps({
 	uploads: { type: Array, required: true },
@@ -28,6 +42,7 @@ const emit = defineEmits(['close', 'close-item']);
 
 const isDismissed = ref(false);
 const isMinimized = ref(false);
+const isReconnecting = ref(false);
 
 const rawUploads = computed(() => props.uploads);
 const visibleUploads = computed(() => {
@@ -64,10 +79,33 @@ const visibleUploads = computed(() => {
 			itemCount,
 			status,
 			error: failedItem?.error || group.error,
+			errorCode: failedItem?.errorCode || group.errorCode || null,
+			errorProvider: failedItem?.errorProvider || group.errorProvider || null,
 			progress_percentage: progress,
 		};
 	});
 });
+const reauthGroup = computed(() => visibleUploads.value.find((group) => group.status === 'failed' && group.errorCode === 'ACCOUNT_REAUTH_REQUIRED') || null);
+const reauthProviderName = computed(() => {
+	const provider = reauthGroup.value?.errorProvider;
+	return provider ? (providerNames[provider] || provider) : '';
+});
+
+async function reconnectFromError() {
+	const provider = reauthGroup.value?.errorProvider;
+	isReconnecting.value = true;
+	try {
+		if (provider && isOAuthProvider(provider)) {
+			await connectOAuthProvider(provider);
+			return;
+		}
+	} catch {
+		// fall through to Storage settings
+	} finally {
+		isReconnecting.value = false;
+	}
+	router.push('/quota');
+}
 const activeCount = computed(() => visibleUploads.value.filter((item) => !['completed', 'failed', 'cancelled'].includes(item.status)).length);
 const completedCount = computed(() => visibleUploads.value.filter((item) => item.status === 'completed').length);
 const failedCount = computed(() => visibleUploads.value.filter((item) => item.status === 'failed').length);
@@ -137,7 +175,7 @@ function iconFor(upload) {
 </script>
 
 <template>
-	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-0 right-4 z-50 w-[360px] overflow-hidden rounded-t-[18px] border border-b-0 border-[#e6ebf2] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)]">
+	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-[calc(76px+env(safe-area-inset-bottom))] left-2 right-2 z-50 overflow-hidden rounded-t-[18px] border border-b-0 border-[#e6ebf2] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)] sm:left-auto sm:right-4 sm:w-[360px] lg:bottom-0">
 		<header class="flex h-[54px] items-center justify-between gap-3 px-5 text-[#202124] dark:text-slate-100">
 			<strong class="text-base font-medium">{{ toastTitle }}</strong>
 			<div class="flex items-center gap-2">
@@ -154,6 +192,18 @@ function iconFor(upload) {
 			<div class="flex h-9 items-center justify-between bg-[#fbfcff] px-5 text-sm text-[#5f6368] dark:bg-slate-800/70 dark:text-slate-300">
 				<span>{{ summaryText }}</span>
 				<span v-if="activeCount" class="font-medium text-[#1a73e8]">{{ totalProgress }}%</span>
+			</div>
+
+			<div v-if="reauthGroup" class="flex flex-wrap items-center justify-between gap-2 border-t border-[#f3c7c4] bg-[#fce8e6] px-5 py-3 dark:border-red-900/50 dark:bg-red-950/30">
+				<p class="min-w-0 flex-1 truncate text-xs font-medium text-[#c5221f] dark:text-red-300">{{ reauthGroup.error }}</p>
+				<button type="button" class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-[#c5221f] px-3.5 text-xs font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60" :disabled="isReconnecting" @click="reconnectFromError">
+					<IconLoader2 v-if="isReconnecting" :size="14" :stroke="2" class="animate-spin" />
+					<IconPlugConnectedX v-else :size="14" :stroke="2" />
+					<span>{{ reauthProviderName ? t('upload.reconnectProvider', { provider: reauthProviderName }) : t('upload.reconnectAccount') }}</span>
+				</button>
+				<button type="button" class="inline-flex h-8 shrink-0 items-center rounded-full border border-[#f3c7c4] bg-white px-3.5 text-xs font-medium text-[#c5221f] transition hover:bg-[#fce8e6] disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300" :disabled="isReconnecting" @click="router.push('/quota')">
+					{{ t('upload.goToStorage') }}
+				</button>
 			</div>
 
 			<div class="max-h-[260px] overflow-y-auto py-2">

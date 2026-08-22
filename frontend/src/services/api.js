@@ -61,51 +61,80 @@ export const settingsApi = {
 };
 
 export const aiApi = {
-	history() {
-		return request('/ai/history');
-	},
 	async chat(message, { onEvent, signal } = {}) {
-		const response = await fetch(`${API_BASE_URL}/ai/chat`, {
-			method: 'POST',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ message }),
-			signal,
-		});
-
-		if (!response.ok) {
-			const payload = await response.json().catch(() => ({ error: 'AI request failed' }));
-			const error = new Error(payload.error || 'AI request failed');
-			error.status = response.status;
-			error.code = payload.code || null;
-			throw error;
+		const controller = new AbortController();
+		const onExternalAbort = () => controller.abort();
+		if (signal) {
+			if (signal.aborted) controller.abort();
+			else signal.addEventListener('abort', onExternalAbort, { once: true });
 		}
+		const timer = setTimeout(() => controller.abort(), 70000);
+		try {
+			const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ message }),
+				signal: controller.signal,
+			});
 
-		if (!response.body) return;
-
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			buffer += decoder.decode(value, { stream: true });
-
-			let separator;
-			while ((separator = buffer.indexOf('\n\n')) !== -1) {
-				const raw = buffer.slice(0, separator);
-				buffer = buffer.slice(separator + 2);
-				const line = raw.trim();
-				if (!line.startsWith('data:')) continue;
-				const payload = line.slice(5).trim();
-				if (!payload) continue;
-				try {
-					onEvent?.(JSON.parse(payload));
-				} catch {}
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({ error: 'AI request failed' }));
+				const error = new Error(payload.error || 'AI request failed');
+				error.status = response.status;
+				error.code = payload.code || null;
+				throw error;
 			}
+
+			if (!response.body) return;
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let sawDone = false;
+			let sawError = false;
+
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+
+				let separator;
+				while ((separator = buffer.indexOf('\n\n')) !== -1) {
+					const raw = buffer.slice(0, separator);
+					buffer = buffer.slice(separator + 2);
+					const line = raw.trim();
+					if (!line.startsWith('data:')) continue;
+					const payload = line.slice(5).trim();
+					if (!payload) continue;
+					try {
+						const event = JSON.parse(payload);
+						if (event.type === 'done') sawDone = true;
+						if (event.type === 'error') sawError = true;
+						onEvent?.(event);
+					} catch {}
+				}
+			}
+
+			if (!sawDone && !sawError) {
+				const interrupted = new Error('La respuesta se interrumpió. Inténtalo de nuevo.');
+				interrupted.status = 504;
+				interrupted.code = 'AI_STREAM_INTERRUPTED';
+				throw interrupted;
+			}
+		} catch (err) {
+			if (err.name === 'AbortError' && !(signal && signal.aborted)) {
+				const error = new Error('El asistente tardó demasiado. Inténtalo de nuevo.');
+				error.status = 408;
+				error.code = 'AI_TIMEOUT';
+				throw error;
+			}
+			throw err;
+		} finally {
+			clearTimeout(timer);
+			if (signal) signal.removeEventListener('abort', onExternalAbort);
 		}
 	},
 };
