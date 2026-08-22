@@ -2,6 +2,7 @@ import { sql } from '../db.js';
 import { copyFile, transferFile, transferFolder } from './transfer.js';
 import { updateTransferJob } from './jobs.js';
 import { releaseStorageReservation } from './service.js';
+import { resolveFolderDestination } from './folderRefs.js';
 import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
 
 async function loadTransfer(env, job) {
@@ -26,7 +27,16 @@ async function loadTransfer(env, job) {
     WHERE fm.id=${job.destination_folder_id} AND fm.user_id=${job.user_id} AND fm.is_folder=TRUE
     LIMIT 1
   `;
-  const destination = destinationRows[0];
+  let destination = destinationRows[0];
+  if (!destination) {
+    // Dual-read fallback: virtual_folders is becoming the single folder registry (P1).
+    const resolvedVf = await resolveFolderDestination(db, job.user_id, job.destination_folder_id);
+    if (resolvedVf && resolvedVf.kind === 'vf' && resolvedVf.cloudAccountId) {
+      const accountRows = await db`SELECT * FROM cloud_accounts WHERE id=${resolvedVf.cloudAccountId} AND user_id=${job.user_id} LIMIT 1`;
+      const account = accountRows[0];
+      if (account) destination = { id: resolvedVf.id, virtual_path: resolvedVf.parentPath, file_name: resolvedVf.name, is_folder: true, remote_file_id: resolvedVf.remoteParentId, cloud_account_id: resolvedVf.cloudAccountId, ...account, account_status: account.status };
+    }
+  }
   if (!destination) throw Object.assign(new Error('Transfer destination folder no longer exists'), { code: 'TRANSFER_DESTINATION_NOT_FOUND', status: 404 });
   if (destination.account_status !== 'active') throw Object.assign(new Error('Transfer destination account is not active'), { code: 'DESTINATION_ACCOUNT_INACTIVE', status: 409 });
 

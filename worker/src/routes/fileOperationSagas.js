@@ -2,6 +2,7 @@ import { requireUser, sql } from '../db.js';
 import { performRename, performMove, performDelete, syncStorageAccount } from '../providers/storage.js';
 import { normalizeVirtualPath, sanitizeFileName } from '../utils/fileNames.js';
 import { startSaga, updateSaga, completeSaga, failSaga } from '../utils/sagas.js';
+import { resolveFolderDestination, resolveFolderPath } from '../storage/folderRefs.js';
 
 async function getSource(c, fileId) {
   const user = await requireUser(c);
@@ -56,6 +57,13 @@ async function resolveDestination(c, user, source, body) {
       LIMIT 1
     `;
     destination = rows[0] || null;
+    if (!destination) {
+      // Dual-read fallback: virtual_folders is becoming the single folder registry (P1).
+      const resolvedVf = await resolveFolderDestination(db, user.id, destinationId, source?.cloud_account_id || null);
+      if (resolvedVf && resolvedVf.kind === 'vf' && resolvedVf.cloudAccountId) {
+        destination = { id: resolvedVf.id, virtual_path: resolvedVf.parentPath, file_name: resolvedVf.name, is_folder: true, remote_file_id: resolvedVf.remoteParentId, cloud_account_id: resolvedVf.cloudAccountId, account_status: 'active', provider: 'google_drive' };
+      }
+    }
   } else if (requestedPath) {
     const destinationPath = normalizeVirtualPath(requestedPath);
     if (destinationPath !== '/') {
@@ -75,6 +83,17 @@ async function resolveDestination(c, user, source, body) {
         LIMIT 1
       `;
       destination = rows[0] || null;
+      if (!destination) {
+        // Dual-read fallback: virtual_folders is becoming the single folder registry (P1).
+        const resolvedPathVf = await resolveFolderPath(db, user.id, requestedPath);
+        if (resolvedPathVf && resolvedPathVf.kind === 'vf') {
+          const vfmPreferred = resolvedPathVf.materialization && resolvedPathVf.materialization.cloud_account_id === source.cloud_account_id ? resolvedPathVf.materialization : null;
+          const chosenAccount = (vfmPreferred && vfmPreferred.cloud_account_id) || resolvedPathVf.cloudAccountId;
+          if (chosenAccount === source.cloud_account_id) {
+            destination = { id: resolvedPathVf.id, virtual_path: resolvedPathVf.parentPath, file_name: resolvedPathVf.name, is_folder: true, remote_file_id: (vfmPreferred && vfmPreferred.remote_file_id) || resolvedPathVf.remoteParentId, cloud_account_id: source.cloud_account_id, account_status: 'active', provider: 'google_drive' };
+          }
+        }
+      }
     }
   }
 
