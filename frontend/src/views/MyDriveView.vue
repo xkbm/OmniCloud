@@ -15,6 +15,7 @@ import FileListContextMenu from '../components/FileListContextMenu.vue';
 import FilePreviewModal from '../components/FilePreviewModal.vue';
 import FileDetailsModal from '../components/FileDetailsModal.vue';
 import LoadingState from '../components/LoadingState.vue';
+import FileListSkeleton from '../components/FileListSkeleton.vue';
 import { useIncrementalRender } from '../composables/useIncrementalRender';
 import { useFileListView } from '../composables/useFileListView';
 import { useAutoRefresh } from '../composables/useAutoRefresh.js';
@@ -353,7 +354,7 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<nav aria-label="Breadcrumb" class="m-0 flex flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
+				<nav aria-label="Breadcrumb" class="sticky top-0 z-20 m-0 -mx-4 flex flex-wrap items-center gap-1 bg-white/95 px-4 py-2 text-2xl font-normal text-[#202124] backdrop-blur dark:bg-slate-800/95 dark:text-slate-100 max-md:text-xl sm:-mx-6 sm:px-6">
 					<template v-for="(crumb, index) in breadcrumbs" :key="crumb.path">
 						<button type="button" class="max-w-[220px] truncate text-left transition hover:text-[#1a73e8] dark:hover:text-sky-300" @click="fileTreeStore.navigate(crumb.path)">{{ crumb.label === 'Root' ? 'Drive Saya' : crumb.label }}</button>
 						<IconChevronRight v-if="index < breadcrumbs.length - 1" :size="18" :stroke="2" class="mx-1 text-[#5f6368] dark:text-slate-400" />
@@ -375,15 +376,13 @@ onBeforeUnmount(() => {
 
 			<div v-if="!isGridView" class="relative">
 				<div class="custom-scrollbar overflow-x-auto rounded-2xl border border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800">
-					<div class="min-w-[760px]">
+					<div class="md:min-w-[760px]">
 						<div class="custom-scrollbar max-h-[min(70vh,780px)] overflow-y-auto overflow-x-hidden" @scroll="handleListScroll">
 							<FileListHeader :sortable="true" :sort-by="sortBy" :sort-direction="sortDirection" @sort="setSort" />
 
-							<FileListRow v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+							<FileListRow v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 							<div v-if="!sortedFiles.length && !isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('drive.noFiles') }}</div>
-							<div v-if="isLoading" class="p-[18px]">
-								<LoadingState />
-							</div>
+							<FileListSkeleton v-if="isLoading" variant="row" :count="8" />
 						</div>
 					</div>
 				</div>
@@ -392,11 +391,9 @@ onBeforeUnmount(() => {
 
 			<div v-else class="relative">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-					<FileListGridCard v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+					<FileListGridCard v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 					<div v-if="!sortedFiles.length && !isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('drive.noFiles') }}</div>
-					<div v-if="isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-						<LoadingState />
-					</div>
+					<FileListSkeleton v-if="isLoading" variant="card" :count="8" class="col-span-full" />
 				</div>
 				<LoadingState v-if="actionInProgress" variant="overlay" :message="actionLabel || t('drive.processing')" />
 			</div>

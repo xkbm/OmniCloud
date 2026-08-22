@@ -15,6 +15,7 @@ import FileListContextMenu from '../components/FileListContextMenu.vue';
 import FilePreviewModal from '../components/FilePreviewModal.vue';
 import FileDetailsModal from '../components/FileDetailsModal.vue';
 import LoadingState from '../components/LoadingState.vue';
+import FileListSkeleton from '../components/FileListSkeleton.vue';
 import { useIncrementalRender } from '../composables/useIncrementalRender';
 import { useFileListView } from '../composables/useFileListView';
 import { useAutoRefresh } from '../composables/useAutoRefresh.js';
@@ -178,7 +179,7 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 		<div class="relative min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-5 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6" @click="clearSelection">
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
 				<h1 class="m-0">
-					<nav aria-label="Breadcrumb" class="flex flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
+					<nav aria-label="Breadcrumb" class="sticky top-0 z-20 -mx-4 flex flex-wrap items-center gap-1 bg-white/95 px-4 py-2 text-2xl font-normal text-[#202124] backdrop-blur dark:bg-slate-800/95 dark:text-slate-100 max-md:text-xl sm:-mx-6 sm:px-6">
 						<template v-for="(crumb, breadcrumbIndex) in breadcrumbItems" :key="`${crumb.index}:${crumb.label}`">
 							<button type="button" class="max-w-[220px] truncate leading-tight transition hover:text-[#1a73e8] dark:hover:text-sky-300" @click="navigateToBreadcrumb(crumb.index)">{{ crumb.label }}</button>
 							<IconChevronRight v-if="breadcrumbIndex < breadcrumbItems.length - 1" :size="18" :stroke="2" class="text-[#5f6368] mx-1 dark:text-slate-400" />
@@ -203,16 +204,16 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 
 			<div v-if="!isGridView" class="relative">
 				<div class="custom-scrollbar overflow-x-auto rounded-2xl border border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800">
-					<div class="min-w-[760px]">
+					<div class="md:min-w-[760px]">
 						<div class="custom-scrollbar max-h-[min(70vh,780px)] overflow-y-auto overflow-x-hidden" @scroll="handleListScroll">
 							<FileListHeader :sortable="false" />
 
 							<template v-for="group in renderedGroupedFiles" :key="group.key">
 								<div class="sticky top-11 z-[1] bg-[#f8fafd] px-[18px] py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 							</template>
 							<div v-if="!groupedFiles.length && !loading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('shared.empty') }}</div>
-							<div v-if="loading" class="p-[18px]"><LoadingState /></div>
+							<FileListSkeleton v-if="loading" variant="row" :count="8" />
 						</div>
 					</div>
 				</div>
@@ -223,10 +224,10 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<template v-for="group in renderedGroupedFiles" :key="group.key">
 						<div class="col-span-full rounded-2xl bg-[#f8fafd] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 					</template>
 					<div v-if="!groupedFiles.length && !loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('shared.empty') }}</div>
-					<div v-if="loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"><LoadingState /></div>
+					<FileListSkeleton v-if="loading" variant="card" :count="8" class="col-span-full" />
 				</div>
 				<LoadingState v-if="actionInProgress" variant="overlay" :message="actionLabel || t('drive.processing')" />
 			</div>

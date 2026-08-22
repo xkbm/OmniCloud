@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { IconCloudDataConnection, IconChevronRight, IconHelp, IconHome, IconLayoutGrid, IconMenu2, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconStar, IconTrash, IconUsers, IconX, IconClockHour4, IconCloud, IconFolder, IconCloudFilled, IconClockHour4Filled, IconFolderFilled, IconHomeFilled, IconStarFilled, IconUserFilled, IconLanguage, IconLogout, IconBell, IconSparkles } from '@tabler/icons-vue';
@@ -44,6 +44,11 @@ const globalSearchError = ref('');
 const globalSearchDebounce = ref(null);
 const createMenuRef = ref(null);
 const searchRef = ref(null);
+const globalSearchInputRef = ref(null);
+const globalSearchResultsRef = ref(null);
+const activeSearchResultIndex = ref(-1);
+const isFabMenuOpen = ref(false);
+const fabRef = ref(null);
 const theme = ref('light');
 const accountStore = useAccountManagementStore();
 const settingsStore = useSettingsStore();
@@ -110,11 +115,40 @@ function handleSearchFocus() {
 	isGlobalSearchOpen.value = true;
 }
 
+function focusGlobalSearch() {
+	isGlobalSearchOpen.value = true;
+	nextTick(() => {
+		globalSearchInputRef.value?.focus();
+		globalSearchInputRef.value?.select();
+	});
+}
+
+function moveActiveSearchResult(delta) {
+	const total = renderedGlobalSearchResults.value.length;
+	if (!total) { activeSearchResultIndex.value = -1; return; }
+	const current = activeSearchResultIndex.value;
+	activeSearchResultIndex.value = current < 0 ? (delta > 0 ? 0 : total - 1) : (current + delta + total) % total;
+	nextTick(() => {
+		globalSearchResultsRef.value?.querySelector('[data-active-result="true"]')?.scrollIntoView({ block: 'nearest' });
+	});
+}
+
+function handleSearchKeydown(event) {
+	if (event.key === 'ArrowDown') { event.preventDefault(); moveActiveSearchResult(1); }
+	else if (event.key === 'ArrowUp') { event.preventDefault(); moveActiveSearchResult(-1); }
+	else if (event.key === 'Enter' && activeSearchResultIndex.value >= 0) {
+		event.preventDefault();
+		const item = renderedGlobalSearchResults.value[activeSearchResultIndex.value];
+		if (item) openSearchResult(item);
+	}
+}
+
 function clearGlobalSearch() {
 	globalSearchTerm.value = '';
 	globalSearchResults.value = [];
 	globalSearchError.value = '';
 	isGlobalSearchOpen.value = false;
+	activeSearchResultIndex.value = -1;
 }
 
 async function openSearchResult(item) {
@@ -142,6 +176,15 @@ function toggleMobileNav() {
 
 function closeMobileNav() {
 	isMobileNavOpen.value = false;
+}
+
+function toggleFabMenu() {
+	isFabMenuOpen.value = !isFabMenuOpen.value;
+}
+
+function runFabAction(action) {
+	isFabMenuOpen.value = false;
+	emit(action);
 }
 
 function openProfileModal() {
@@ -187,6 +230,10 @@ function handleDocumentClick(event) {
 		isCreateMenuOpen.value = false;
 	}
 
+	if (!fabRef.value?.contains(event.target)) {
+		isFabMenuOpen.value = false;
+	}
+
 	if (!searchRef.value?.contains(event.target)) {
 		isGlobalSearchOpen.value = false;
 	}
@@ -197,6 +244,12 @@ function handleDocumentClick(event) {
 }
 
 function handleWindowKeydown(event) {
+	if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k') {
+		event.preventDefault();
+		focusGlobalSearch();
+		return;
+	}
+
 	if (event.key !== 'Escape') {
 		return;
 	}
@@ -251,6 +304,7 @@ onBeforeUnmount(() => {
 
 watch(globalSearchTerm, (term) => {
 	isGlobalSearchOpen.value = true;
+	activeSearchResultIndex.value = -1;
 	if (globalSearchDebounce.value) {
 		window.clearTimeout(globalSearchDebounce.value);
 	}
@@ -275,6 +329,8 @@ const navItems = computed(() => [
 	{ id: 'starred', label: t('nav.starred'), icon: IconStar, activeIcon: IconStarFilled, to: '/starred' },
 	{ id: 'storage', label: t('nav.storage'), icon: IconCloud, activeIcon: IconCloudFilled, to: '/quota' },
 ]);
+
+const mobileTabs = computed(() => navItems.value.filter((item) => ['home', 'drive', 'recent', 'shared'].includes(item.id)));
 
 const profileLinks = [
 	{ id: 'website', label: 'Website', href: 'https://tarmizi.id' },
@@ -312,19 +368,19 @@ const profileLinks = [
 					<span class="grid place-items-center text-[#5f6368] dark:text-slate-400">
 						<IconSearch :size="18" :stroke="2" />
 					</span>
-					<input v-model="globalSearchTerm" type="text" :placeholder="t('header.searchPlaceholder')" class="w-full min-w-0 border-0 bg-transparent text-sm text-[#202124] outline-none placeholder:text-[#5f6368] dark:text-slate-100 dark:placeholder:text-slate-400 sm:text-base" @focus="handleSearchFocus" @keydown.esc.prevent="isGlobalSearchOpen = false" />
+					<input ref="globalSearchInputRef" v-model="globalSearchTerm" type="text" :placeholder="t('header.searchPlaceholder')" :title="t('header.searchShortcut')" class="w-full min-w-0 border-0 bg-transparent text-sm text-[#202124] outline-none placeholder:text-[#5f6368] dark:text-slate-100 dark:placeholder:text-slate-400 sm:text-base" @focus="handleSearchFocus" @keydown.esc.prevent="isGlobalSearchOpen = false" @keydown="handleSearchKeydown" />
 					<button v-if="globalSearchTerm" type="button" class="grid size-8 place-items-center rounded-full text-[#5f6368] transition hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10" :aria-label="t('header.clearSearch')" @click="clearGlobalSearch">
 						<IconX :size="16" :stroke="2" />
 					</button>
 				</div>
 
-				<div v-if="isGlobalSearchOpen && globalSearchTerm.trim()" class="fixed left-2 right-2 top-16 z-50 overflow-hidden rounded-3xl border border-[#dfe6f1] bg-white/98 shadow-[0_18px_50px_rgba(60,64,67,0.24)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/98 dark:shadow-[0_18px_50px_rgba(2,6,23,0.5)] lg:absolute lg:left-0 lg:right-0 lg:top-[calc(100%+8px)]">
+				<div v-if="isGlobalSearchOpen && globalSearchTerm.trim()" ref="globalSearchResultsRef" class="fixed left-2 right-2 top-16 z-50 overflow-hidden rounded-3xl border border-[#dfe6f1] bg-white/98 shadow-[0_18px_50px_rgba(60,64,67,0.24)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/98 dark:shadow-[0_18px_50px_rgba(2,6,23,0.5)] lg:absolute lg:left-0 lg:right-0 lg:top-[calc(100%+8px)]">
 					<div class="custom-scrollbar max-h-[min(420px,70vh)] overflow-y-auto py-2" @scroll="handleGlobalSearchScroll">
 						<div v-if="isGlobalSearchLoading && !globalSearchResults.length" class="px-4 py-4 text-sm text-[#5f6368] dark:text-slate-400">{{ t('header.searchLoading') }}</div>
 						<div v-else-if="globalSearchError" class="px-4 py-4 text-sm text-red-600 dark:text-red-300">{{ globalSearchError }}</div>
 						<div v-else-if="!globalSearchResults.length" class="px-4 py-4 text-sm text-[#5f6368] dark:text-slate-400">{{ t('header.searchNoResults') }}</div>
 						<template v-else>
-							<button v-for="item in renderedGlobalSearchResults" :key="item.id" type="button" class="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[#f8fafd] dark:hover:bg-slate-800/80" @click="openSearchResult(item)">
+							<button v-for="(item, itemIndex) in renderedGlobalSearchResults" :key="item.id" type="button" class="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[#f8fafd] dark:hover:bg-slate-800/80" :data-active-result="itemIndex === activeSearchResultIndex" :class="itemIndex === activeSearchResultIndex ? 'bg-[#f8fafd] dark:bg-slate-800/80' : ''" @mouseenter="activeSearchResultIndex = itemIndex" @click="openSearchResult(item)">
 								<span class="grid size-9 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
 									<component :is="getFileIcon(item, item.is_folder)" :size="18" :stroke="item.is_folder ? 0 : 1.8" />
 								</span>
@@ -351,7 +407,7 @@ const profileLinks = [
 					<IconHelp :size="18" :stroke="2" />
 				</button>
 				<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('ai.open')" :aria-label="t('ai.open')" @click="isAIChatOpen = true">
-				<IconSparkles :size="18" :stroke="2" class="text-[#7c3aed] dark:text-violet-300" />
+				<IconSparkles :size="18" :stroke="2" />
 			</button>
 			<button type="button" class="hidden size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10 sm:grid" :title="t('updates.buttonLabel')" :aria-label="t('updates.buttonLabel')" @click="openUpdatesModal">
 					<IconBell :size="18" :stroke="2" />
@@ -408,7 +464,7 @@ const profileLinks = [
 							<span>{{ item.label }}</span>
 						</RouterLink>
 						<button type="button" class="group relative flex h-12 items-center gap-3.5 overflow-hidden rounded-2xl px-4 text-[#202124] transition-all duration-200 hover:bg-black/[0.03] hover:pl-5 dark:text-slate-100 dark:hover:bg-white/6" @click="closeMobileNav(); isAIChatOpen = true">
-							<IconSparkles :size="20" :stroke="2" class="shrink-0 text-[#7c3aed] transition-transform duration-200 group-hover:scale-110 dark:text-violet-300" />
+							<IconSparkles :size="20" :stroke="2" class="shrink-0 text-[#5f6368] transition-transform duration-200 group-hover:scale-110 dark:text-slate-400" />
 							<span>{{ t('ai.title') }}</span>
 						</button>
 					</nav>
@@ -434,7 +490,37 @@ const profileLinks = [
 			</div>
 		</Transition>
 
-		<div class="grid grid-cols-1 gap-3 lg:grid-cols-[256px_minmax(0,1fr)]">
+		<div v-if="isFabMenuOpen" ref="fabRef" class="fixed bottom-[calc(96px+env(safe-area-inset-bottom))] right-4 z-40 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-slate-700 dark:bg-slate-800 lg:hidden">
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('new-folder')">
+					<span>{{ t('sidebar.newFolder') }}</span>
+					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+				</button>
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('upload-files')">
+					<span>{{ t('sidebar.uploadFile') }}</span>
+					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+				</button>
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('upload-folder')">
+					<span>{{ t('sidebar.uploadFolder') }}</span>
+					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+				</button>
+			</div>
+
+			<button type="button" class="fixed bottom-[calc(80px+env(safe-area-inset-bottom))] right-4 z-40 grid size-14 place-items-center rounded-full bg-gradient-to-r from-[#1a73e8] to-[#4f8ff7] text-white shadow-[0_14px_32px_rgba(26,115,232,0.35)] transition active:scale-95 lg:hidden" :aria-label="t('common.new')" @click.stop="toggleFabMenu">
+				<IconPlus :size="26" :stroke="2" />
+			</button>
+
+			<nav class="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-[#e0e3e7] bg-white/95 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 lg:hidden [padding-bottom:env(safe-area-inset-bottom)]">
+				<RouterLink v-for="tab in mobileTabs" :key="tab.id" :to="tab.to" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px]" :class="props.currentSection === tab.id ? 'font-semibold text-[#1a73e8] dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'">
+					<component :is="props.currentSection === tab.id ? tab.activeIcon : tab.icon" :size="22" :stroke="props.currentSection === tab.id ? 1.5 : 2" />
+					<span class="w-full truncate text-center">{{ tab.label }}</span>
+				</RouterLink>
+				<button type="button" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px]" :class="isMobileNavOpen ? 'font-semibold text-[#1a73e8] dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'" data-mobile-nav-toggle @click.stop="toggleMobileNav">
+					<IconMenu2 :size="22" :stroke="2" />
+					<span class="w-full truncate text-center">{{ t('header.more') }}</span>
+				</button>
+			</nav>
+
+			<div class="grid grid-cols-1 gap-3 lg:grid-cols-[256px_minmax(0,1fr)]">
 			<aside class="hidden pb-6 pl-4 pr-3 pt-2 lg:flex lg:min-h-[calc(100vh-4rem)] lg:flex-col">
 				<div ref="createMenuRef" class="relative inline-block">
 					<button type="button" class="inline-flex h-14 items-center gap-3.5 rounded-2xl bg-white px-[18px] pr-[22px] font-medium text-[#3c4043] shadow-[0_1px_3px_rgba(60,64,67,0.3),0_4px_8px_rgba(60,64,67,0.15)] dark:bg-slate-800 dark:text-slate-100 dark:shadow-[0_10px_30px_rgba(15,23,42,0.45)]" @click.stop="toggleCreateMenu">
@@ -485,7 +571,7 @@ const profileLinks = [
 
 			</aside>
 
-			<main class="px-2 pb-4 lg:px-0 lg:pr-4 lg:pb-5">
+			<main class="px-2 pb-[calc(88px+env(safe-area-inset-bottom))] lg:px-0 lg:pr-4 lg:pb-5">
 				<slot />
 			</main>
 		</div>

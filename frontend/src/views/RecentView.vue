@@ -14,6 +14,7 @@ import FileListContextMenu from '../components/FileListContextMenu.vue';
 import FilePreviewModal from '../components/FilePreviewModal.vue';
 import FileDetailsModal from '../components/FileDetailsModal.vue';
 import LoadingState from '../components/LoadingState.vue';
+import FileListSkeleton from '../components/FileListSkeleton.vue';
 import { useIncrementalRender } from '../composables/useIncrementalRender';
 import { useFileListView } from '../composables/useFileListView';
 import { providerLabel } from '../composables/useFormatFile.js';
@@ -125,16 +126,16 @@ function openItemOnDoubleClick(file) {
 
 			<div v-if="!isGridView" class="relative">
 				<div class="custom-scrollbar overflow-x-auto rounded-2xl border border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800">
-					<div class="min-w-[760px]">
+					<div class="md:min-w-[760px]">
 						<div class="custom-scrollbar max-h-[min(70vh,780px)] overflow-y-auto overflow-x-hidden" @scroll="handleListScroll">
 							<FileListHeader :sortable="false" />
 
 							<template v-for="group in renderedGroupedFiles" :key="group.key">
 								<div class="sticky top-11 z-[1] bg-[#f8fafd] px-[18px] py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 							</template>
 							<div v-if="!groupedFiles.length && !loading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('recent.empty') }}</div>
-							<div v-if="loading" class="p-[18px]"><LoadingState /></div>
+							<FileListSkeleton v-if="loading" variant="row" :count="8" />
 						</div>
 					</div>
 				</div>
@@ -145,10 +146,10 @@ function openItemOnDoubleClick(file) {
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<template v-for="group in renderedGroupedFiles" :key="group.key">
 						<div class="col-span-full rounded-2xl bg-[#f8fafd] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 					</template>
 					<div v-if="!groupedFiles.length && !loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('recent.empty') }}</div>
-					<div v-if="loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"><LoadingState /></div>
+					<FileListSkeleton v-if="loading" variant="card" :count="8" class="col-span-full" />
 				</div>
 				<LoadingState v-if="actionInProgress" variant="overlay" :message="actionLabel || t('drive.processing')" />
 			</div>

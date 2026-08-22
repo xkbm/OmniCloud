@@ -6,6 +6,7 @@ import TruncateMarquee from './TruncateMarquee.vue';
 import { formatBytes, formatDate, getModifiedTime } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
 import '../utils/internalDragGuard.js';
+import { isCoarsePointerDevice } from '../utils/touchDevice.js';
 
 const { t } = useI18n();
 const props = defineProps({
@@ -14,6 +15,7 @@ const props = defineProps({
   nameField: { type: String, default: 'file_name' },
   showStar: { type: Boolean, default: true },
   highlighted: { type: Boolean, default: false },
+  selectionActive: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['select', 'open', 'contextmenu']);
@@ -31,9 +33,53 @@ const canDrag = computed(() => props.item?.capabilities?.move !== false);
 const canDrop = computed(() => props.item.is_folder && props.item?.capabilities?.move !== false);
 const isInternalDrag = (event) => Boolean(event.dataTransfer?.types?.includes(dragMime));
 
-function handleClick(event) { emit('select', event); }
 function handleDblClick(event) { emit('open', event); }
 function handleContextMenu(event) { emit('contextmenu', event); }
+
+// Touch: tap opens, long-press (500ms) selects + opens the context menu.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
+let pressTimer = null;
+let pressStartX = 0;
+let pressStartY = 0;
+let suppressNextClick = false;
+
+function isTouchPointer(event) {
+  return isCoarsePointerDevice() && (event.pointerType === 'touch' || event.pointerType === 'pen');
+}
+
+function clearPressTimer() {
+  if (pressTimer !== null) { window.clearTimeout(pressTimer); pressTimer = null; }
+}
+
+function handlePressStart(event) {
+  if (!isTouchPointer(event)) return;
+  clearPressTimer();
+  pressStartX = event.clientX;
+  pressStartY = event.clientY;
+  pressTimer = window.setTimeout(() => {
+    pressTimer = null;
+    suppressNextClick = true;
+    try { navigator.vibrate?.(20); } catch {}
+    if (!props.selected) emit('select', event);
+    handleContextMenu(event);
+  }, LONG_PRESS_MS);
+}
+
+function handlePressMove(event) {
+  if (!pressTimer) return;
+  if (Math.abs(event.clientX - pressStartX) > LONG_PRESS_SLOP_PX || Math.abs(event.clientY - pressStartY) > LONG_PRESS_SLOP_PX) clearPressTimer();
+}
+
+function handleClick(event) {
+  if (suppressNextClick) { suppressNextClick = false; return; }
+  if (isCoarsePointerDevice()) {
+    if (props.selectionActive) { emit('select', event); return; }
+    emit('open', event);
+    return;
+  }
+  emit('select', event);
+}
 
 function handleDragStart(event) {
   if (!canDrag.value) return;
@@ -108,6 +154,11 @@ function handleDrop(event) {
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
+    @pointerdown="handlePressStart"
+    @pointermove="handlePressMove"
+    @pointerup="clearPressTimer"
+    @pointercancel="clearPressTimer"
+    @pointerleave="clearPressTimer"
     @click="handleClick"
     @dblclick="handleDblClick"
     @contextmenu="handleContextMenu"

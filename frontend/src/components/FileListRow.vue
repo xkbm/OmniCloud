@@ -5,6 +5,7 @@ import TruncateMarquee from './TruncateMarquee.vue';
 import { formatBytes, formatDate, getModifiedTime } from '../composables/useFormatFile.js';
 import { getFileIcon } from '../composables/useFileType.js';
 import '../utils/internalDragGuard.js';
+import { isCoarsePointerDevice } from '../utils/touchDevice.js';
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -12,6 +13,7 @@ const props = defineProps({
   nameField: { type: String, default: 'file_name' },
   showStar: { type: Boolean, default: true },
   highlighted: { type: Boolean, default: false },
+  selectionActive: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['select', 'open', 'contextmenu']);
@@ -29,9 +31,53 @@ const canDrag = computed(() => props.item?.capabilities?.move !== false);
 const canDrop = computed(() => props.item.is_folder && props.item?.capabilities?.move !== false);
 const isInternalDrag = (event) => Boolean(event.dataTransfer?.types?.includes(dragMime));
 
-function handleClick(event) { emit('select', event); }
 function handleDblClick(event) { emit('open', event); }
 function handleContextMenu(event) { emit('contextmenu', event); }
+
+// Touch: tap opens, long-press (500ms) selects + opens the context menu.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
+let pressTimer = null;
+let pressStartX = 0;
+let pressStartY = 0;
+let suppressNextClick = false;
+
+function isTouchPointer(event) {
+  return isCoarsePointerDevice() && (event.pointerType === 'touch' || event.pointerType === 'pen');
+}
+
+function clearPressTimer() {
+  if (pressTimer !== null) { window.clearTimeout(pressTimer); pressTimer = null; }
+}
+
+function handlePressStart(event) {
+  if (!isTouchPointer(event)) return;
+  clearPressTimer();
+  pressStartX = event.clientX;
+  pressStartY = event.clientY;
+  pressTimer = window.setTimeout(() => {
+    pressTimer = null;
+    suppressNextClick = true;
+    try { navigator.vibrate?.(20); } catch {}
+    if (!props.selected) emit('select', event);
+    handleContextMenu(event);
+  }, LONG_PRESS_MS);
+}
+
+function handlePressMove(event) {
+  if (!pressTimer) return;
+  if (Math.abs(event.clientX - pressStartX) > LONG_PRESS_SLOP_PX || Math.abs(event.clientY - pressStartY) > LONG_PRESS_SLOP_PX) clearPressTimer();
+}
+
+function handleClick(event) {
+  if (suppressNextClick) { suppressNextClick = false; return; }
+  if (isCoarsePointerDevice()) {
+    if (props.selectionActive) { emit('select', event); return; }
+    emit('open', event);
+    return;
+  }
+  emit('select', event);
+}
 
 function handleDragStart(event) {
   if (!canDrag.value) return;
@@ -93,7 +139,7 @@ function handleDrop(event) {
 
 <template>
   <div
-    class="group grid min-h-[52px] cursor-default select-none grid-cols-[minmax(260px,2fr)_minmax(150px,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] transition first:border-t-0 dark:border-slate-700"
+    class="group grid min-h-[52px] cursor-default select-none grid-cols-[minmax(260px,2fr)_minmax(150px,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] transition first:border-t-0 dark:border-slate-700 max-md:grid-cols-[minmax(0,1fr)_90px]"
     :class="[
       selected ? 'bg-gradient-to-r from-[#e8f0fe] to-[#f8fbff] shadow-[inset_4px_0_0_#1a73e8] dark:from-sky-500/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#38bdf8]' : isDropTarget ? 'bg-gradient-to-r from-sky-50 to-[#f7fbff] shadow-[inset_4px_0_0_#0ea5e9] ring-2 ring-inset ring-sky-400/70 dark:from-sky-400/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#38bdf8]' : highlighted ? 'bg-gradient-to-r from-amber-50 to-[#fffdf5] shadow-[inset_4px_0_0_#f59e0b] dark:from-amber-400/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#fbbf24]' : 'hover:bg-black/[0.02] dark:hover:bg-white/6',
       isDragging ? 'opacity-45' : '',
@@ -106,6 +152,11 @@ function handleDrop(event) {
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
+    @pointerdown="handlePressStart"
+    @pointermove="handlePressMove"
+    @pointerup="clearPressTimer"
+    @pointercancel="clearPressTimer"
+    @pointerleave="clearPressTimer"
     @click="handleClick"
     @dblclick="handleDblClick"
     @contextmenu="handleContextMenu"
@@ -115,7 +166,7 @@ function handleDrop(event) {
       <TruncateMarquee :text="displayName" />
       <IconStarFilled v-if="showStar && item.is_starred && item.capabilities?.starred" :size="14" :stroke="0" class="shrink-0 text-amber-400" />
     </div>
-    <span class="text-[#5f6368] dark:text-slate-400">{{ formatDate(getModifiedTime(item)) }}</span>
+    <span class="text-[#5f6368] dark:text-slate-400 max-md:hidden">{{ formatDate(getModifiedTime(item)) }}</span>
     <span class="text-[#5f6368] dark:text-slate-400">{{ item.is_folder ? '—' : formatBytes(item.size) }}</span>
   </div>
 </template>
