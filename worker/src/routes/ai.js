@@ -1,5 +1,5 @@
 import { requireUser, sql } from '../db.js';
-import { buildHistoryContents, runAgent, executeTool } from '../ai/agent.js';
+import { runAgent, executeTool } from '../ai/agent.js';
 
 const AI_MIN_MESSAGES = 10;
 const AI_MIN_WINDOW_MS = 60 * 1000;
@@ -34,26 +34,10 @@ async function enforceAiRateLimit(c, user) {
 }
 
 export async function aiRoutes(app) {
-  app.get('/api/ai/history', async (c) => {
-    try {
-      const user = await requireUser(c);
-      const db = sql(c.env);
-      const rows = await db`
-        SELECT id, role, content, created_at
-        FROM chat_messages
-        WHERE user_id = ${user.id}
-        ORDER BY created_at DESC
-        LIMIT 40
-      `;
-      return c.json({ data: rows.reverse() });
-    } catch (error) {
-      return errorResponse(c, error);
-    }
-  });
-
   app.post('/api/ai/chat', async (c) => {
     try {
       const user = await requireUser(c);
+      const db = sql(c.env);
       const body = await c.req.json().catch(() => ({}));
       const message = String(body.message || '').trim();
       if (!message) return c.json({ error: 'El mensaje no puede estar vacío', code: 'AI_MESSAGE_REQUIRED' }, 400);
@@ -66,13 +50,7 @@ export async function aiRoutes(app) {
         return c.json({ error: 'El asistente de IA no está configurado en el servidor.', code: 'AI_NOT_CONFIGURED' }, 503);
       }
 
-      const db = sql(c.env);
-      const inserted = await db`
-        INSERT INTO chat_messages (id, user_id, role, content)
-        VALUES (${crypto.randomUUID()}, ${user.id}, 'user', ${message})
-        RETURNING id, created_at
-      `;
-      const userMsg = inserted[0];
+      const userMsg = { id: crypto.randomUUID(), created_at: new Date().toISOString() };
 
       const cookie = c.req.header('cookie') || '';
       const internalFetch = async (path, options = {}) => {
@@ -103,14 +81,7 @@ export async function aiRoutes(app) {
           try {
             send({ type: 'message', id: userMsg.id, created_at: userMsg.created_at });
 
-            const historyRows = await db`
-              SELECT role, content
-              FROM chat_messages
-              WHERE user_id = ${user.id} AND id <> ${userMsg.id}
-              ORDER BY created_at DESC
-              LIMIT 20
-            `;
-            const contents = buildHistoryContents([...historyRows.reverse(), { role: 'user', content: message }]);
+            const contents = [{ role: 'user', parts: [{ text: message }] }];
 
             const result = await runAgent({
               env: c.env,
@@ -119,20 +90,13 @@ export async function aiRoutes(app) {
               executeTool: (name, args) => executeTool({ env: c.env, user, db, internalFetch }, name, args),
             });
 
-            const assistantContent = result.text || 'Hecho.';
-            await db`
-              INSERT INTO chat_messages (id, user_id, role, content, meta)
-              VALUES (${crypto.randomUUID()}, ${user.id}, 'assistant', ${assistantContent}, ${JSON.stringify({ toolCount: result.toolCount, tooManyTools: Boolean(result.tooManyTools) })}::jsonb)
-            `;
+            const finalText = (result.text || '').trim();
+            if (!finalText) {
+              send({ type: 'text', delta: result.tooManyTools ? 'No pude completar la acción en este intento. Vuelve a pedírmelo de forma más concreta.' : 'Hecho.' });
+            }
             send({ type: 'done', toolCount: result.toolCount, usage: result.usage });
           } catch (error) {
             console.error('[ai] chat stream failed:', error);
-            try {
-              await db`
-                INSERT INTO chat_messages (id, user_id, role, content)
-                VALUES (${crypto.randomUUID()}, ${user.id}, 'assistant', 'Lo siento, no pude completar la respuesta. Inténtalo de nuevo.')
-              `;
-            } catch {}
             send({ type: 'error', message: error.message || 'Error inesperado del asistente', code: error.code || 'AI_ERROR' });
           } finally {
             try {
