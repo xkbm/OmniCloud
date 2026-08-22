@@ -24,7 +24,7 @@ function sizeLimitResponse(c, maxFileSize) {
 
 function safeErrorResponse(c, error, fallback, code, extra = null) {
   if (error instanceof Response) return error;
-  console.error('[uploads] request failed:', error);
+  try { console.error('[route-error] uploads', JSON.stringify({ message: String(error?.message || error).slice(0, 300), code: error?.code || null, status: Number(error?.status) || null })); } catch {}
   if (REAUTH_ERROR_PATTERNS.some((re) => re.test(String(error?.message || '')))) {
     return c.json({ error: 'La conexión con el proveedor de almacenamiento ha expirado. Reconecta la cuenta en Configuración → Almacenamiento.', code: 'ACCOUNT_REAUTH_REQUIRED', ...(extra || {}) }, 401);
   }
