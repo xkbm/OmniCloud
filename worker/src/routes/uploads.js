@@ -10,6 +10,7 @@ import { isTransientStorageError } from '../utils/storageErrors.js';
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
 const SAFE_UPLOAD_ERROR_CODES = new Set(['MAX_FILE_SIZE_EXCEEDED', 'FILE_TYPE_NOT_ALLOWED', 'MIME_EXTENSION_MISMATCH']);
+const REAUTH_ERROR_PATTERNS = [/token has been expired or revoked/i, /invalid_grant/i, /access.*revoked/i];
 
 function getMaxFileSize(env) {
   const configured = Number(env.MAX_FILE_SIZE);
@@ -21,9 +22,12 @@ function sizeLimitResponse(c, maxFileSize) {
   return c.json({ error: 'File exceeds the configured maximum upload size', code: 'MAX_FILE_SIZE_EXCEEDED', max_file_size: maxFileSize }, 413);
 }
 
-function safeErrorResponse(c, error, fallback, code) {
+function safeErrorResponse(c, error, fallback, code, extra = null) {
   if (error instanceof Response) return error;
   console.error('[uploads] request failed:', error);
+  if (REAUTH_ERROR_PATTERNS.some((re) => re.test(String(error?.message || '')))) {
+    return c.json({ error: 'La conexión con el proveedor de almacenamiento ha expirado. Reconecta la cuenta en Configuración → Almacenamiento.', code: 'ACCOUNT_REAUTH_REQUIRED', ...(extra || {}) }, 401);
+  }
   const transient = isTransientStorageError(error);
   const safeCode = transient ? 'STORAGE_TRANSIENT' : SAFE_UPLOAD_ERROR_CODES.has(error?.code) ? error.code : code;
   const safeMessage = SAFE_UPLOAD_ERROR_CODES.has(error?.code)
@@ -98,6 +102,7 @@ export async function uploadsRoutes(app) {
   app.post('/api/uploads/initiate', async (c) => {
     let reservationId = null;
     let userId = null;
+    let providerHint = null;
     try {
       const user = await requireUser(c);
       userId = user.id;
@@ -128,6 +133,7 @@ export async function uploadsRoutes(app) {
       `;
       const account = accounts[0] || null;
       if (!account) return c.json({ error: 'Selected storage backend is no longer active', code: 'STORAGE_BACKEND_UNAVAILABLE' }, 409);
+      providerHint = account.provider;
 
       const remoteParentId = await ensureRemoteParentPath(c.env, db, user.id, account, virtualPath);
       const resolved = await resolveUploadFileName(c.env, account, { fileName, virtualPath, remoteParentId, duplicatePolicy });
@@ -168,7 +174,7 @@ export async function uploadsRoutes(app) {
       if (reservationId && userId) {
         try { await releaseStorageReservation(c.env, reservationId, userId); } catch (releaseError) { console.error('[uploads] reservation release failed:', releaseError); }
       }
-      return safeErrorResponse(c, error, 'Unable to initiate upload', 'UPLOAD_INIT_FAILED');
+      return safeErrorResponse(c, error, 'Unable to initiate upload', 'UPLOAD_INIT_FAILED', providerHint ? { provider: providerHint } : null);
     }
   });
 
@@ -178,6 +184,7 @@ export async function uploadsRoutes(app) {
     let reservationId = null;
     let userId = null;
     let remoteSucceeded = false;
+    let providerHint = null;
     try {
       const user = await requireUser(c);
       userId = user.id;
@@ -192,6 +199,7 @@ export async function uploadsRoutes(app) {
       const session = rows[0];
       if (!session) return c.json({ error: 'Upload session not found', code: 'UPLOAD_SESSION_NOT_FOUND' }, 404);
       reservationId = session.reservation_id || null;
+      providerHint = session.provider;
       if (session.status !== 'pending') return c.json({ error: `Upload session is ${session.status}`, code: 'UPLOAD_SESSION_NOT_PENDING' }, 409);
       if (session.account_status !== 'active') return c.json({ error: 'Storage account is not active', code: 'ACCOUNT_INACTIVE' }, 409);
       if (!c.req.raw.body) return c.json({ error: 'Upload body is empty', code: 'EMPTY_UPLOAD_BODY' }, 400);
@@ -267,7 +275,7 @@ export async function uploadsRoutes(app) {
       if (sagaId) {
         try { await failSaga(c.env, sagaId, error, remoteSucceeded); } catch (sagaError) { console.error('[uploads] failed to update upload saga:', sagaError); }
       }
-      return safeErrorResponse(c, error, 'Upload failed', 'UPLOAD_FAILED');
+      return safeErrorResponse(c, error, 'Upload failed', 'UPLOAD_FAILED', providerHint ? { provider: providerHint } : null);
     }
   });
 }
