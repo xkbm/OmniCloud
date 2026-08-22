@@ -1,3 +1,14 @@
+# Validación de CI para pushes a cloudflare-test.
+#
+# HISTORIAL: este workflow era el pipeline de cutover original (17-ago) y re-ejecutaba
+# la migración del snapshot SQLite contra la base de producción en cada push. Con la
+# base evolucionada eso es incorrecto y rompe por FK (runs #349/#350, cuenta fantasma
+# 2287f4af eliminada en la reconexión OAuth). Hoy el deploy canónico es manual/wrangler
+# (scripts/deploy-pages.ps1), así que este workflow queda REDUCIDO a validación pura:
+# sin escrituras a la base, sin deploys que compitan con el pipeline manual.
+# El pipeline completo de cutover sigue disponible en el historial de git si algún día
+# hiciera falta reprovisionar desde cero.
+
 name: Cloudflare final cutover
 
 on:
@@ -10,29 +21,13 @@ permissions:
   contents: read
 
 jobs:
-  cutover:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install backend dependencies
-        run: npm install --prefix backend
-      - name: Validate migration contract
-        run: node backend/scripts/verify-cloudflare-migration-contract.js
-      - name: Validate Neon secret
-        run: test -n "$DATABASE_URL" || (echo "Missing NEON_DATABASE_URL" && exit 1)
-        env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      - name: Migrate SQLite snapshot to PostgreSQL
-        run: npm --prefix backend run migrate:cloudflare
-        env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      - name: Verify migration parity
-        run: node backend/scripts/verify-cloudflare-migration.js
-        env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       - name: Install Worker dependencies
         run: npm install --prefix worker --ignore-scripts
       - name: Install legacy runtime dependencies
@@ -42,62 +37,3 @@ jobs:
       - name: Validate Worker bundle
         run: npx wrangler@4.123.0 deploy --dry-run
         working-directory: worker
-      - name: Provision Worker runtime secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          put_secret() {
-            local name="$1" value="$2"
-            if [ -n "$value" ]; then printf '%s' "$value" | npx wrangler@4.123.0 secret put "$name"; fi
-          }
-          AUTH_SECRET=$(printf 'omnicloud-auth-v1:%s' "$OMNICLOUD_ENCRYPTION_KEY" | sha256sum | awk '{print $1}')
-          put_secret DATABASE_URL "$NEON_DATABASE_URL"
-          put_secret ENCRYPTION_KEY "$OMNICLOUD_ENCRYPTION_KEY"
-          put_secret AUTH_SECRET "$AUTH_SECRET"
-          put_secret GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
-          put_secret ONEDRIVE_CLIENT_SECRET "$ONEDRIVE_CLIENT_SECRET"
-          put_secret DROPBOX_CLIENT_SECRET "$DROPBOX_CLIENT_SECRET"
-          put_secret YANDEX_CLIENT_SECRET "$YANDEX_CLIENT_SECRET"
-        working-directory: worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          OMNICLOUD_ENCRYPTION_KEY: ${{ secrets.OMNICLOUD_ENCRYPTION_KEY }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          ONEDRIVE_CLIENT_SECRET: ${{ secrets.ONEDRIVE_CLIENT_SECRET }}
-          DROPBOX_CLIENT_SECRET: ${{ secrets.DROPBOX_CLIENT_SECRET }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
-      - name: Deploy Worker
-        run: npx wrangler@4.123.0 deploy
-        working-directory: worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Build frontend
-        run: npm run build
-        env:
-          VITE_API_BASE_URL: /api
-          VITE_WS_BASE_URL: /ws/uploads
-      - name: Prepare Pages bundle
-        run: |
-          find pages -maxdepth 1 -type f ! -name 'wrangler.toml' -delete
-          rm -rf pages/assets pages/dist pages/functions
-          cp -R frontend/dist/. pages/
-          cp -R functions pages/functions
-      - name: Ensure Pages project exists
-        run: npx wrangler@4.123.0 pages project create omnicloud-4u --production-branch cloudflare-test || true
-        working-directory: pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Deploy Pages
-        run: npx wrangler@4.123.0 pages deploy . --project-name omnicloud-4u
-        working-directory: pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Smoke test Pages
-        run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/ >/dev/null
-      - name: Smoke test API
-        run: curl --fail --silent --show-error --location https://omnicloud-4u.pages.dev/api/health
