@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
 
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id TEXT PRIMARY KEY,
-  token TEXT NOT NULL UNIQUE,
+  token TEXT UNIQUE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   cloud_account_id TEXT NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
   file_name TEXT NOT NULL,
