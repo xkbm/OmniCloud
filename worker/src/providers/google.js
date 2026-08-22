@@ -1,5 +1,6 @@
 import { decryptJson, encryptJson } from '../crypto.js';
 import { sql } from '../db.js';
+import { ensureVirtualFolder, upsertVirtualFolderMaterialization } from '../storage/virtualFolders.js';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const FILES_API = `${DRIVE_API}/files`;
@@ -179,12 +180,54 @@ export async function syncGoogleAccount(env, userId, account) {
     return segments.length ? `/${segments.join('/')}/` : '/';
   };
   const db = sql(env);
+  const folderMode = String(env.SYNC_FOLDER_MODE || 'fm') === 'vf';
   await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
   for (const file of files) {
+    const isFolder = file.mimeType === FOLDER_MIME;
+    if (folderMode && isFolder) {
+      // SYNC_FOLDER_MODE=vf: folders are registered in virtual_folders (single registry)
+      // instead of mirrored into file_metadata. Inert until the flag flips.
+      const parentPath = folderPath(file);
+      const fullPath = `${parentPath}${file.name}/`;
+      const vfRow = await ensureVirtualFolder(env, userId, fullPath);
+      await upsertVirtualFolderMaterialization(env, { userId, virtualFolderId: vfRow.id, cloudAccountId: account.id, remoteFileId: file.id, remoteParentId: file.parents?.[0] || null });
+      if (Boolean(file.starred) !== Boolean(vfRow.is_starred)) {
+        await db`UPDATE virtual_folders SET is_starred=${Boolean(file.starred)},updated_at=NOW() WHERE id=${vfRow.id}`;
+      }
+      continue;
+    }
     await db`
       INSERT INTO file_metadata (id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type, cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time)
-      VALUES (${crypto.randomUUID()}, ${userId}, ${folderPath(file)}, ${file.name}, ${file.mimeType === FOLDER_MIME}, ${Boolean(file.starred)}, ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null}, ${file.createdTime || null}, ${file.modifiedTime || null})
+      VALUES (${crypto.randomUUID()}, ${userId}, ${folderPath(file)}, ${file.name}, ${isFolder}, ${Boolean(file.starred)}, ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null}, ${file.createdTime || null}, ${file.modifiedTime || null})
     `;
+  }
+  if (folderMode) {
+    // Prune: materializations whose remote folder vanished in Drive become 'deleted';
+    // a virtual folder is removed only when its LAST active materialization disappears.
+    try {
+      const syncedFolderIds = files.filter((file) => file.mimeType === FOLDER_MIME).map((file) => file.id);
+      const staleRows = await db`
+        SELECT vfm.id AS materialization_id, vfm.virtual_folder_id, vf.path
+        FROM virtual_folder_materializations vfm
+        JOIN virtual_folders vf ON vf.id=vfm.virtual_folder_id
+        WHERE vfm.user_id=${userId} AND vfm.cloud_account_id=${account.id} AND vfm.status='active'
+          AND NOT (vfm.remote_file_id = ANY(${syncedFolderIds}))
+      `;
+      const processedPrefixes = [];
+      for (const stale of [...staleRows].sort((a, b) => a.path.length - b.path.length)) {
+        const prefix = stale.path.endsWith('/') ? stale.path : `${stale.path}/`;
+        if (processedPrefixes.some((existing) => prefix.startsWith(existing))) continue;
+        await db`UPDATE virtual_folder_materializations SET status='deleted',updated_at=NOW() WHERE id=${stale.materialization_id}`;
+        const remaining = await db`SELECT COUNT(*)::int AS remaining FROM virtual_folder_materializations WHERE virtual_folder_id=${stale.virtual_folder_id} AND status='active'`;
+        if ((remaining[0]?.remaining || 0) > 0) continue;
+        await db`DELETE FROM virtual_folder_materializations WHERE user_id=${userId} AND virtual_folder_id IN (SELECT id FROM virtual_folders WHERE user_id=${userId} AND (id=${stale.virtual_folder_id} OR left(path,char_length(${prefix}))=${prefix}))`;
+        await db`DELETE FROM virtual_folders WHERE user_id=${userId} AND (id=${stale.virtual_folder_id} OR left(path,char_length(${prefix}))=${prefix})`;
+        processedPrefixes.push(prefix);
+        console.log('[sync-vf] pruned folder absent from provider:', stale.path);
+      }
+    } catch (pruneError) {
+      console.error('[sync-vf] prune failed:', pruneError);
+    }
   }
   return { count: files.length };
 }

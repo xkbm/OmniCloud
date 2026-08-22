@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS virtual_folders (
   path TEXT NOT NULL,
   name TEXT NOT NULL,
   parent_path TEXT NOT NULL DEFAULT '/',
+  is_starred BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_virtual_folders_user_path UNIQUE (user_id, path),
