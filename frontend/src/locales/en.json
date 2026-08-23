@@ -76,7 +76,7 @@
 		"trash": "Trash"
 	},
 	"header": {
-		"searchPlaceholder": "Search in OmniCloud",
+		"searchPlaceholder": "Search in Nimbo",
 		"searchShortcut": "Search (Ctrl+K)",
 		"clearSearch": "Clear search",
 		"searchLoading": "Searching...",
@@ -193,7 +193,7 @@
 		"lastSync": "Last sync: {date}",
 		"disconnectAccount": "Disconnect account",
 		"disconnectConfirm": "Disconnect {email}?",
-		"disconnectConfirmDesc": "Account will be removed from OmniCloud but data in the original cloud remains safe."
+		"disconnectConfirmDesc": "Account will be removed from Nimbo but data in the original cloud remains safe."
 	},
 	"providers": {
 		"googleDrive": "Google Drive",
@@ -252,36 +252,36 @@
 		}
 	},
 	"help": {
-		"title": "OmniCloud Quick Help",
+		"title": "Nimbo Quick Help",
 		"centerTitle": "Help Center",
-		"subtitle": "A brief summary to help you understand OmniCloud's main workflow faster",
+		"subtitle": "A brief summary to help you understand Nimbo's main workflow faster",
 		"createFolder": "Create new folder",
 		"createFolderDesc": "Use the New button to create a new folder directly from active storage.",
 		"uploadFiles": "Upload file or folder",
 		"uploadFilesDesc": "Upload files or folders and monitor progress through the app's process notifications.",
 		"searchFiles": "Search files faster",
-		"searchFilesDesc": "Use the search box at the top to browse files in OmniCloud.",
+		"searchFilesDesc": "Use the search box at the top to browse files in Nimbo.",
 		"usageTips": "Usage tips",
 		"usageTipsList": [
 			"Use the sidebar menu to switch between home, drive, and storage overview.",
-			"Click the OmniCloud logo on desktop to open the creator profile and open source project info.",
+			"Click the Nimbo logo on desktop to open the creator profile and open source project info.",
 			"Press the Esc button to close any open dialog."
 		],
 		"connectAccount": "How to connect a cloud account",
 		"connectAccountSteps": [
 			"Open the Storage page, then press the Connect button to select a provider like Google Drive, OneDrive, Dropbox, or MEGA.",
 			"Then follow the login or authorization process according to the provider. If the account is disconnected, suspended, or the token is no longer valid, use the Connect button to try reconnecting.",
-			"After successfully connected, the storage capacity and files from that account will automatically appear in OmniCloud."
+			"After successfully connected, the storage capacity and files from that account will automatically appear in Nimbo."
 		],
-		"howItWorks": "How OmniCloud Works",
-		"howItWorksStep1": "You connect multiple cloud accounts from various providers into one OmniCloud dashboard.",
+		"howItWorks": "How Nimbo Works",
+		"howItWorksStep1": "You connect multiple cloud accounts from various providers into one Nimbo dashboard.",
 		"howItWorksStep2": "The app will sync file metadata and storage capacity so all accounts can be viewed from one place.",
-		"howItWorksStep3": "When you create a folder, upload, rename, or delete, OmniCloud will forward that action to the related provider and display the progress in the interface.",
-		"howItWorksStep4": "This way, OmniCloud serves as a unified management layer for many cloud accounts in a neater experience."
+		"howItWorksStep3": "When you create a folder, upload, rename, or delete, Nimbo will forward that action to the related provider and display the progress in the interface.",
+		"howItWorksStep4": "This way, Nimbo serves as a unified management layer for many cloud accounts in a neater experience."
 	},
 	"profile": {
 		"title": "Credits",
-		"subtitle": "About the creator of OmniCloud",
+		"subtitle": "About the creator of Nimbo",
 		"letsConnect": "Let's Connect",
 		"letsConnectDesc": "Follow my journey, works, and latest activities through the following official channels",
 		"openSource": "Open Source on GitHub",
@@ -360,7 +360,7 @@
 		"sync": "Sync",
 		"capacity": "Capacity",
 		"accountsTitle": "Connected accounts",
-		"accountsDescription": "Accounts connected to OmniCloud and their storage usage.",
+		"accountsDescription": "Accounts connected to Nimbo and their storage usage.",
 		"loadingAccounts": "Loading accounts...",
 		"connectTitle": "Connect account",
 		"connectDescription": "Add a cloud account to see all your files in one place.",

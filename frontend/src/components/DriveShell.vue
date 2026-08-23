@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { IconCloudDataConnection, IconChevronRight, IconHelp, IconHome, IconLayoutGrid, IconMenu2, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconStar, IconTrash, IconUsers, IconX, IconClockHour4, IconCloud, IconFolder, IconCloudFilled, IconClockHour4Filled, IconFolderFilled, IconHomeFilled, IconStarFilled, IconUserFilled, IconLanguage, IconLogout, IconBell, IconSparkles } from '@tabler/icons-vue';
 import { useRouter } from 'vue-router';
-import logoUrl from '../assets/logo.webp';
+import logoUrl from '../assets/nimbo-logo.svg';
 import { useAccountManagementStore } from '../stores/accountManagement';
 import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
@@ -333,13 +333,8 @@ const navItems = computed(() => [
 const mobileTabs = computed(() => navItems.value.filter((item) => ['home', 'drive', 'recent', 'shared'].includes(item.id)));
 
 const profileLinks = [
-	{ id: 'website', label: 'Website', href: 'https://tarmizi.id' },
-	{ id: 'github', label: 'GitHub', href: 'https://github.com/dimartarmizi' },
-	{ id: 'linkedin', label: 'LinkedIn', href: 'https://www.linkedin.com/in/dimartarmizi' },
-	{ id: 'instagram', label: 'Instagram', href: 'https://www.instagram.com/dimartarmizi' },
-	{ id: 'facebook', label: 'Facebook', href: 'https://www.facebook.com/dimartarmizi' },
-	{ id: 'reddit', label: 'Reddit', href: 'https://www.reddit.com/user/dimartarmizi' },
-];
+		{ id: 'github', label: 'GitHub', href: 'https://github.com/xkbm/omnicloud' },
+	];
 </script>
 
 <template>
@@ -357,9 +352,9 @@ const profileLinks = [
 				</button>
 				<div class="hidden items-center gap-2 lg:flex">
 					<button type="button" class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white transition hover:scale-[1.03] focus:outline-none focus:ring-4 focus:ring-[#1a73e8]/20 dark:bg-slate-800 dark:focus:ring-blue-400/20" :aria-label="t('header.openProfile')" @click="openProfileModal">
-						<img :src="logoUrl" alt="OmniCloud logo" class="size-full object-cover" />
+						<img :src="logoUrl" alt="Nimbo logo" class="size-full object-cover" />
 					</button>
-					<div class="text-[22px] font-medium text-[#5f6368] dark:text-slate-300">OmniCloud</div>
+					<div class="text-[22px] font-medium text-[#5f6368] dark:text-slate-300">Nimbo</div>
 				</div>
 			</div>
 
@@ -427,9 +422,9 @@ const profileLinks = [
 					<div class="mb-5 flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2">
 							<span class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white dark:bg-slate-800">
-								<img :src="logoUrl" alt="OmniCloud logo" class="size-full object-cover" />
+								<img :src="logoUrl" alt="Nimbo logo" class="size-full object-cover" />
 							</span>
-							<span class="text-xl font-medium text-[#5f6368] dark:text-slate-300">OmniCloud</span>
+							<span class="text-xl font-medium text-[#5f6368] dark:text-slate-300">Nimbo</span>
 						</div>
 						<button type="button" class="grid size-10 place-items-center rounded-full text-[#5f6368] transition hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10" :aria-label="t('header.closeNav')" @click="closeMobileNav">
 							<IconX :size="20" :stroke="2" />

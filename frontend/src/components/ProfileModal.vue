@@ -1,8 +1,8 @@
 <script setup>
 import { useI18n } from 'vue-i18n';
 import { IconExternalLink, IconX } from '@tabler/icons-vue';
+import nimboLogo from '../assets/nimbo-logo.svg';
 
-import dimarTarmiziPhoto from '../assets/dimar-tarmizi.jpg';
 
 defineProps({
 	open: { type: Boolean, default: false },
@@ -33,8 +33,8 @@ function closeModal() {
 
 				<div class="space-y-5 overflow-y-auto p-5 sm:p-6 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_58%)]">
 					<div class="flex flex-col items-center text-center">
-						<img :src="dimarTarmiziPhoto" alt="Dimar Tarmizi" class="size-24 rounded-[28px] object-cover shadow-[0_16px_32px_rgba(15,23,42,0.18)] ring-4 ring-white dark:ring-slate-900" />
-						<h3 class="mt-4 text-2xl font-semibold text-[#202124] dark:text-slate-100">Dimar Tarmizi</h3>
+						<img :src="nimboLogo" alt="Nimbo" class="size-24 rounded-[28px] object-cover shadow-[0_16px_32px_rgba(15,23,42,0.18)] ring-4 ring-white dark:ring-slate-900" />
+						<h3 class="mt-4 text-2xl font-semibold text-[#202124] dark:text-slate-100">Nimbo</h3>
 						<p class="mt-1 max-w-md text-sm leading-6 text-[#5f6368] dark:text-slate-400">Learning &amp; building as I go, making stuff that’s useful and awesome</p>
 					</div>
 
@@ -81,7 +81,7 @@ function closeModal() {
 							<p class="text-sm font-semibold text-[#202124] dark:text-slate-100">{{ t('profile.openSource') }}</p>
 							<p class="mt-1 text-xs text-[#5f6368] dark:text-slate-400">{{ t('profile.madeWith') }}</p>
 						</div>
-						<a href="https://github.com/dimartarmizi/OmniCloud" target="_blank" rel="noreferrer" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#1a73e8] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(26,115,232,0.24)] transition hover:bg-[#1765cc] sm:w-auto dark:bg-[#3b82f6] dark:hover:bg-[#2563eb]">
+						<a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#1a73e8] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(26,115,232,0.24)] transition hover:bg-[#1765cc] sm:w-auto dark:bg-[#3b82f6] dark:hover:bg-[#2563eb]">
 							<span>{{ t('profile.githubLink') }}</span>
 							<IconExternalLink :size="16" :stroke="2" />
 						</a>

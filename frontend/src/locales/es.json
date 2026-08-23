@@ -76,7 +76,7 @@
     "trash": "Papelera"
   },
   "header": {
-    "searchPlaceholder": "Buscar en OmniCloud",
+    "searchPlaceholder": "Buscar en Nimbo",
     "searchShortcut": "Buscar (Ctrl+K)",
     "clearSearch": "Borrar búsqueda",
     "searchLoading": "Buscando...",
@@ -193,7 +193,7 @@
     "lastSync": "Última sincronización: {date}",
     "disconnectAccount": "Desconectar cuenta",
     "disconnectConfirm": "¿Desconectar la cuenta {email}?",
-    "disconnectConfirmDesc": "La cuenta se eliminará de OmniCloud, pero los datos de la nube original permanecerán seguros."
+    "disconnectConfirmDesc": "La cuenta se eliminará de Nimbo, pero los datos de la nube original permanecerán seguros."
   },
   "providers": {
     "googleDrive": "Google Drive",
@@ -252,36 +252,36 @@
     }
   },
   "help": {
-    "title": "Ayuda rápida de OmniCloud",
+    "title": "Ayuda rápida de Nimbo",
     "centerTitle": "Centro de ayuda",
-    "subtitle": "Un resumen breve para ayudarte a entender más rápido el flujo principal de OmniCloud",
+    "subtitle": "Un resumen breve para ayudarte a entender más rápido el flujo principal de Nimbo",
     "createFolder": "Crear una carpeta nueva",
     "createFolderDesc": "Usa el botón Nuevo para crear una carpeta directamente en el almacenamiento activo.",
     "uploadFiles": "Subir archivos o carpetas",
     "uploadFilesDesc": "Sube archivos o carpetas y controla el progreso mediante las notificaciones de proceso de la aplicación.",
     "searchFiles": "Buscar archivos más rápido",
-    "searchFilesDesc": "Usa el campo de búsqueda de la parte superior para encontrar archivos en OmniCloud.",
+    "searchFilesDesc": "Usa el campo de búsqueda de la parte superior para encontrar archivos en Nimbo.",
     "usageTips": "Consejos de uso",
     "usageTipsList": [
       "Usa el menú lateral para moverte entre inicio, drive y el resumen de almacenamiento.",
-      "Haz clic en el logo de OmniCloud en el escritorio para abrir el perfil del creador y la información del proyecto de código abierto.",
+      "Haz clic en el logo de Nimbo en el escritorio para abrir el perfil del creador y la información del proyecto de código abierto.",
       "Pulsa Esc para cerrar el diálogo que esté abierto."
     ],
     "connectAccount": "Cómo conectar una cuenta en la nube",
     "connectAccountSteps": [
       "Abre la página Almacenamiento y pulsa Conectar para elegir un proveedor como Google Drive, OneDrive, Dropbox o MEGA.",
       "Después sigue el proceso de inicio de sesión o autorización del proveedor. Si una cuenta está desconectada, suspendida o su token ya no es válido, usa Conectar para intentar conectarla de nuevo.",
-      "Una vez conectada correctamente, la capacidad de almacenamiento y los archivos de esa cuenta aparecerán automáticamente en OmniCloud."
+      "Una vez conectada correctamente, la capacidad de almacenamiento y los archivos de esa cuenta aparecerán automáticamente en Nimbo."
     ],
-    "howItWorks": "Cómo funciona OmniCloud",
-    "howItWorksStep1": "Conectas varias cuentas en la nube de distintos proveedores en un único panel de OmniCloud.",
+    "howItWorks": "Cómo funciona Nimbo",
+    "howItWorksStep1": "Conectas varias cuentas en la nube de distintos proveedores en un único panel de Nimbo.",
     "howItWorksStep2": "La aplicación sincroniza los metadatos de los archivos y la capacidad de almacenamiento para que todas las cuentas puedan verse desde un solo lugar.",
-    "howItWorksStep3": "Cuando creas una carpeta, subes, renombras o eliminas algo, OmniCloud envía la acción al proveedor correspondiente y muestra el progreso en la interfaz.",
-    "howItWorksStep4": "Así, OmniCloud funciona como una capa de gestión unificada para varias cuentas en la nube con una experiencia más ordenada."
+    "howItWorksStep3": "Cuando creas una carpeta, subes, renombras o eliminas algo, Nimbo envía la acción al proveedor correspondiente y muestra el progreso en la interfaz.",
+    "howItWorksStep4": "Así, Nimbo funciona como una capa de gestión unificada para varias cuentas en la nube con una experiencia más ordenada."
   },
   "profile": {
     "title": "Créditos",
-    "subtitle": "Sobre el creador de OmniCloud",
+    "subtitle": "Sobre el creador de Nimbo",
     "letsConnect": "Conectemos",
     "letsConnectDesc": "Sigue mi trabajo, proyectos y actividad reciente a través de los siguientes canales oficiales",
     "openSource": "Código abierto en GitHub",
@@ -360,7 +360,7 @@
     "sync": "Sincronizar",
     "capacity": "Capacidad",
     "accountsTitle": "Cuentas conectadas",
-    "accountsDescription": "Cuentas conectadas a OmniCloud y su uso de almacenamiento.",
+    "accountsDescription": "Cuentas conectadas a Nimbo y su uso de almacenamiento.",
     "loadingAccounts": "Cargando cuentas...",
     "connectTitle": "Conectar cuenta",
     "connectDescription": "Agrega una cuenta en la nube para ver todos tus archivos en un solo lugar.",

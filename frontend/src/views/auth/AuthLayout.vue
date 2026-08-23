@@ -49,7 +49,7 @@ function toggleLanguage() {
 				<span class="auth-hero__logo">
 					<IconCloudDataConnection :size="26" :stroke="2" />
 				</span>
-				<span class="auth-hero__brand">OmniCloud</span>
+				<span class="auth-hero__brand">Nimbo</span>
 			</div>
 
 			<div class="auth-hero__body">
@@ -67,9 +67,9 @@ function toggleLanguage() {
 			</div>
 
 			<p class="auth-hero__foot">
-				© {{ new Date().getFullYear() }} OmniCloud. {{ t('auth.footerMadeBy') }}
-				<a href="https://github.com/dimartarmizi" target="_blank" rel="noreferrer">Dimar Tarmizi</a>.
-				{{ t('auth.footerOpenSourcePrefix') }} <a href="https://github.com/dimartarmizi/OmniCloud" target="_blank" rel="noreferrer">{{ t('auth.footerOpenSource') }}</a>.
+				© {{ new Date().getFullYear() }} Nimbo. {{ t('auth.footerMadeBy') }}
+				<a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer">Nimbo</a>.
+				{{ t('auth.footerOpenSourcePrefix') }} <a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer">{{ t('auth.footerOpenSource') }}</a>.
 			</p>
 		</aside>
 
@@ -79,7 +79,7 @@ function toggleLanguage() {
 					<span class="auth-panel__logo">
 						<IconCloudDataConnection :size="22" :stroke="2" />
 					</span>
-					<span>OmniCloud</span>
+					<span>Nimbo</span>
 				</div>
 
 				<header class="auth-panel__head">

@@ -64,8 +64,8 @@ async function loadUpdates({ force = false } = {}) {
 
 	try {
 		const [repoResponse, commitsResponse] = await Promise.all([
-			fetch('https://api.github.com/repos/dimartarmizi/OmniCloud', { headers: { Accept: 'application/vnd.github+json' } }),
-			fetch('https://api.github.com/repos/dimartarmizi/OmniCloud/commits?per_page=6', { headers: { Accept: 'application/vnd.github+json' } }),
+			fetch('https://api.github.com/repos/xkbm/omnicloud', { headers: { Accept: 'application/vnd.github+json' } }),
+			fetch('https://api.github.com/repos/xkbm/omnicloud/commits?per_page=6', { headers: { Accept: 'application/vnd.github+json' } }),
 		]);
 
 		if (!repoResponse.ok || !commitsResponse.ok) {
@@ -109,12 +109,12 @@ watch(
 
 				<div class="space-y-5 overflow-y-auto p-5 sm:p-6 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_58%)]">
 					<div class="grid gap-3 sm:grid-cols-[1fr_auto]">
-						<a href="https://github.com/dimartarmizi/OmniCloud" target="_blank" rel="noreferrer" class="group flex items-center gap-3 rounded-[24px] border border-[#e7edf6] bg-[#f8fafd] p-4 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.12)] dark:border-slate-800 dark:bg-slate-800/70 dark:hover:border-blue-400/40 dark:hover:bg-slate-800">
+						<a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer" class="group flex items-center gap-3 rounded-[24px] border border-[#e7edf6] bg-[#f8fafd] p-4 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.12)] dark:border-slate-800 dark:bg-slate-800/70 dark:hover:border-blue-400/40 dark:hover:bg-slate-800">
 							<span class="grid size-12 place-items-center rounded-2xl bg-white text-[#202124] shadow-sm dark:bg-slate-900 dark:text-slate-100">
 								<IconBrandGithub :size="24" :stroke="2" />
 							</span>
 							<span class="min-w-0 flex-1">
-								<span class="block text-sm font-semibold text-[#202124] dark:text-slate-100">dimartarmizi/OmniCloud</span>
+								<span class="block text-sm font-semibold text-[#202124] dark:text-slate-100">xkbm/omnicloud</span>
 								<span class="mt-1 block truncate text-xs text-[#5f6368] dark:text-slate-400">{{ t('updates.openRepository') }}</span>
 							</span>
 							<IconExternalLink :size="18" :stroke="2" class="text-[#5f6368] transition group-hover:text-[#1a73e8] dark:text-slate-400 dark:group-hover:text-blue-300" />
