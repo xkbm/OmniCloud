@@ -1,4 +1,4 @@
-# Copy to .dev.vars for local `wrangler dev` (git-ignored).
+# Deploy-to-Cloudflare button reads THIS file to prompt for secrets.\r\n# For local dev: copy to .dev.vars (git-ignored).\r\n#\r\n# 1. Create a free Postgres DB at https://neon.tech and paste its connection string below.\r\n# 2. Everything else can be filled during/after deploy — see SELF-HOSTING.md.
 # Values here are NEVER committed — see SELF-HOSTING.md.
 
 DATABASE_URL=postgres://user:pass@host/db?sslmode=require
