@@ -38,9 +38,13 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   health_status TEXT NOT NULL DEFAULT 'healthy' CHECK (health_status IN ('healthy', 'degraded', 'offline', 'reauth_required')),
   health_checked_at TIMESTAMPTZ,
   health_failure_count INTEGER NOT NULL DEFAULT 0 CHECK (health_failure_count >= 0),
+  synced_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE cloud_accounts
+  ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ;
 
 ALTER TABLE cloud_accounts
   ADD COLUMN IF NOT EXISTS health_status TEXT NOT NULL DEFAULT 'healthy'

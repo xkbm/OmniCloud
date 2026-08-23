@@ -27,6 +27,7 @@ import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
 import { probeAllStorageAccounts } from './storage/service.js';
 import { runAutomaticRebalance } from './storage/rebalance.js';
+import { runAutoSync } from './storage/autoSync.js';
 import { reconcilePendingSagas } from './utils/sagas.js';
 import { sql } from './db.js';
 
@@ -176,7 +177,13 @@ export async function scheduled(_event, env, ctx) {
   ctx.waitUntil(runAutomaticRebalance(env).catch((error) => {
     console.error('[rebalance] scheduled cycle failed:', error);
   }));
+  ctx.waitUntil(runAutoSync(env).catch((error) => {
+    console.error('[auto-sync] scheduled run failed:', error);
+  }));
 }
 
 export { TransferScheduler, UploadProgress };
-export default app;
+// Module workers read ONLY the default export: register both the HTTP fetch
+// handler and the cron `scheduled` handler explicitly. A bare `export default
+// app` silently dropped every scheduled job since the original deploy.
+export default { fetch: app.fetch, scheduled };
