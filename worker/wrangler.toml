@@ -38,5 +38,10 @@ storage = "sqlite"
 type = "durable-object"
 storage = "sqlite"
 
+[assets]
+directory = "../frontend/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/ws/*"]
+
 [observability]
 enabled = true
