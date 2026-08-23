@@ -11,8 +11,11 @@ AUTH_SESSION_TTL_HOURS = "336"
 # Raise this only when the Cloudflare account/zone limit has also been raised.
 MAX_FILE_SIZE = "104857600"
 AI_MODEL = "gemini-3.5-flash-lite"
-GOOGLE_CLIENT_ID = "714892895541-r77o96t6ua7hm929gde28vusnn97lrms.apps.googleusercontent.com"
-GOOGLE_REDIRECT_URI = "https://omnicloud-4u.pages.dev/api/accounts/google/callback"
+# Google OAuth: store these as Cloudflare SECRETS (not file vars) so they survive
+# deploys and stay out of your fork. See SELF-HOSTING.md:
+#   GOOGLE_CLIENT_SECRET / GOOGLE_CLIENT_ID / GOOGLE_REDIRECT_URI
+# Public URL of YOUR Pages deployment (OAuth redirects + CORS).
+FRONTEND_URL = "https://omnicloud-4u.pages.dev"
 SYNC_FOLDER_MODE = "vf"
 AUTO_SYNC_INTERVAL_MINUTES = "60"
 

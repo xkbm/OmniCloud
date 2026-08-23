@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { Storage as MegaStorage } from 'megajs';
 import { S3Client, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { requireUser, sql } from '../db.js';
+import { getSiteUrl } from '../utils/siteUrl.js';
 import { encryptJson } from '../crypto.js';
 import { syncStorageAccount } from '../providers/storage.js';
 
@@ -315,7 +316,7 @@ export async function accountsRoutes(app) {
   });
 
   app.get('/api/accounts/onedrive/callback', async (c) => {
-    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    const frontend = new URL(getSiteUrl(c.env)); frontend.pathname = '/quota';
     try {
       if (c.req.query('error')) throw Object.assign(new Error('OneDrive OAuth denied'), { code: 'ONEDRIVE_OAUTH_DENIED' });
       const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'onedrive'); const config = oauthConfig(c.env, 'onedrive'); const tokens = await exchangeCode(config, c.req.query('code') || '', { scope: ONEDRIVE_SCOPE }); const profile = await refreshOneDriveProfile(tokens.access_token);
@@ -332,7 +333,7 @@ export async function accountsRoutes(app) {
   });
 
   app.get('/api/accounts/dropbox/callback', async (c) => {
-    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    const frontend = new URL(getSiteUrl(c.env)); frontend.pathname = '/quota';
     try {
       if (c.req.query('error')) throw Object.assign(new Error('Dropbox OAuth denied'), { code: 'DROPBOX_OAUTH_DENIED' });
       const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'dropbox'); const config = oauthConfig(c.env, 'dropbox'); const tokens = await exchangeCode({ ...config, tokenUrl: 'https://api.dropboxapi.com/oauth2/token' }, c.req.query('code') || '');
@@ -349,7 +350,7 @@ export async function accountsRoutes(app) {
   });
 
   app.get('/api/accounts/yandex/callback', async (c) => {
-    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173'); frontend.pathname = '/quota';
+    const frontend = new URL(getSiteUrl(c.env)); frontend.pathname = '/quota';
     try {
       if (c.req.query('error')) throw Object.assign(new Error('Yandex OAuth denied'), { code: 'YANDEX_OAUTH_DENIED' });
       const userId = await consumeOAuthState(c.env, c.req.query('state') || '', 'yandex'); const config = oauthConfig(c.env, 'yandex'); const tokens = await exchangeCode({ ...config, tokenUrl: 'https://oauth.yandex.com/token' }, c.req.query('code') || ''); const profile = await getYandexProfile(tokens.access_token); const account = await upsertAccount(c.env, { userId, email: profile.email, provider: 'yandex', credentials: { provider: 'yandex', accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, clientId: config.clientId, clientSecret: config.clientSecret, expiresIn: tokens.expires_in || null, tokenType: tokens.token_type || 'bearer', displayName: profile.displayName }, totalSpace: profile.totalSpace, usedSpace: profile.usedSpace });

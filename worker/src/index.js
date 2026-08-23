@@ -29,12 +29,13 @@ import { probeAllStorageAccounts } from './storage/service.js';
 import { runAutomaticRebalance } from './storage/rebalance.js';
 import { runAutoSync } from './storage/autoSync.js';
 import { reconcilePendingSagas } from './utils/sagas.js';
+import { getSiteUrl } from './utils/siteUrl.js';
 import { sql } from './db.js';
 
 const app = new Hono();
 
 function getAllowedOrigin(env) {
-  return env.CORS_ORIGIN || env.FRONTEND_URL || 'http://localhost:5173';
+  return getSiteUrl(env);
 }
 
 async function enforceLoginRateLimit(c) {
