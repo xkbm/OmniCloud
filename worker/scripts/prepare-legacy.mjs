@@ -114,3 +114,19 @@ export function isLegacyProvider(provider) {
 `);
 
 console.log(`Prepared ${adapters.length} Cloudflare-compatible legacy adapters.`);
+
+// Embed schema.sql as a string for auto-initialization on first boot.
+const schemaPath = path.join(repoRoot, 'worker/schema.sql');
+const migrationsDir = path.join(repoRoot, 'worker/migrations');
+const schemaSql = await fs.readFile(schemaPath, 'utf8');
+const migrationFiles = (await fs.readdir(migrationsDir)).filter(f => f.endsWith('.sql')).sort();
+const migrationEntries = [];
+for (const name of migrationFiles) {
+  const sqlText = await fs.readFile(path.join(migrationsDir, name), 'utf8');
+  migrationEntries.push({ name, sql: sqlText });
+}
+await fs.writeFile(
+  path.join(generatedRoot, 'schema-string.js'),
+  `export const SCHEMA_SQL = ${JSON.stringify(schemaSql)};\n\nexport const MIGRATIONS = ${JSON.stringify(migrationEntries)};\n`,
+);
+console.log('Embedded schema for auto-initialization.');

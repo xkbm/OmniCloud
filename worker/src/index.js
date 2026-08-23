@@ -30,9 +30,15 @@ import { runAutomaticRebalance } from './storage/rebalance.js';
 import { runAutoSync } from './storage/autoSync.js';
 import { reconcilePendingSagas } from './utils/sagas.js';
 import { getSiteUrl } from './utils/siteUrl.js';
+import { ensureDbInitialized } from './db-init.js';
 import { sql } from './db.js';
 
 const app = new Hono();
+
+app.use('*', async (c, next) => {
+	await ensureDbInitialized(c.env);
+	await next();
+});
 
 function getAllowedOrigin(env) {
   return getSiteUrl(env);

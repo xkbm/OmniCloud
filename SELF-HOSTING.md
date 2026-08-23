@@ -6,6 +6,20 @@ Run your own private cloud aggregator on Cloudflare + Neon — **100% free tier 
 
 ## 🇪🇸 Español
 
+
+### 🔑 Generar tus claves (copia y pega en la consola del navegador)
+
+Abre las herramientas de desarrollador (F12) en cualquier página, ve a la pestaña **Console** y pega:
+
+```js
+const b=require("crypto").randomBytes(32).toString("base64url");
+const a=crypto.subtle?b:b;
+console.log("ENCRYPTION_KEY =", JSON.stringify(b));
+console.log("AUTH_SECRET    =", JSON.stringify(b));
+```
+
+Copia los dos valores que aparecen — los necesitarás durante el despliegue.
+
 ### Requisitos (todo gratis)
 
 | Cuenta | Para qué | Plan |
@@ -137,3 +151,4 @@ cd worker && npx wrangler deploy
 ### Troubleshooting
 
 Same items as the Spanish troubleshooting section.
+> 🎉 **Sin terminal**: Nimbo inicializa su base de datos automáticamente la primera vez que arranca. Solo necesitas pegar tu `DATABASE_URL` de Neon durante el despliegue.
