@@ -68,6 +68,7 @@ const {
 	applyFilter,
 	clearFilter,
 	selectedCount,
+	selectedFiles,
 	primarySelectedFile,
 	isSelected,
 	openContextMenu,
@@ -90,7 +91,6 @@ const {
 	detailsFile,
 	isDetailsOpen,
 	closeDetails,
-	downloadSelection,
 	renameSelectedFile,
 	deleteSelectedFile,
 	toggleSelectedFileStar,
@@ -338,15 +338,22 @@ onBeforeUnmount(() => {
 	window.removeEventListener('blur', resetDragState);
 	document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
+
+	function onDownloadSelection() {
+		const files = selectedFiles.value.filter((file) => !file.is_folder);
+		if (!files.length) return;
+		closeContextMenu();
+		uploadQueueStore.downloadFiles(files);
+	}
 </script>
 
 <template>
 	<DriveShell current-section="drive" @new-folder="createNewFolder" @upload-files="openFilePicker" @upload-folder="openFolderPicker">
-		<div id="MyDriveView" class="relative min-h-[calc(100vh-84px)] scroll-mt-20 rounded-[24px] bg-white px-4 py-[18px] pb-5 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6" @click="clearSelection" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragEnter" @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
+		<div id="MyDriveView" class="relative min-h-[calc(100vh-84px)] scroll-mt-20 rounded-[24px] bg-white px-4 py-[18px] pb-5 text-[#202124] dark:bg-[#12161d] dark:text-slate-100 sm:px-6" @click="clearSelection" @dragenter.prevent="handleDragEnter" @dragover.prevent="handleDragEnter" @dragleave.prevent="handleDragLeave" @drop.prevent="handleDrop">
 			<input ref="fileInputRef" class="hidden" type="file" multiple @change="onFileInputChange" />
 			<input ref="folderInputRef" class="hidden" type="file" multiple webkitdirectory directory @change="onFolderInputChange" />
 
-			<div v-if="isDragActive" class="pointer-events-none absolute inset-4 z-20 grid place-items-center rounded-[24px] border-2 border-dashed border-[#1a73e8] bg-[#e8f0fe]/90 text-center dark:bg-slate-900/90">
+			<div v-if="isDragActive" class="pointer-events-none absolute inset-4 z-20 grid place-items-center rounded-[24px] border-2 border-dashed border-[#1a73e8] bg-[#e8f0fe]/90 text-center dark:bg-[#07090d]/90">
 				<div>
 					<p class="text-lg font-semibold text-[#1a73e8]">Lepas file di sini untuk upload</p>
 					<p class="mt-2 text-sm text-[#5f6368] dark:text-slate-400">File dan folder akan diunggah ke lokasi Drive saat ini.</p>
@@ -354,7 +361,7 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<nav aria-label="Breadcrumb" class="sticky top-0 z-20 m-0 -mx-4 flex flex-wrap items-center gap-1 bg-white/95 px-4 py-2 text-2xl font-normal text-[#202124] backdrop-blur dark:bg-slate-800/95 dark:text-slate-100 max-md:text-xl sm:-mx-6 sm:px-6">
+				<nav aria-label="Breadcrumb" class="sticky top-0 z-20 m-0 -mx-4 flex flex-wrap items-center gap-1 bg-white/95 px-4 py-2 text-2xl font-normal text-[#202124] backdrop-blur dark:bg-[#141821]/95 dark:text-slate-100 max-md:text-xl sm:-mx-6 sm:px-6">
 					<template v-for="(crumb, index) in breadcrumbs" :key="crumb.path">
 						<button type="button" class="max-w-[220px] truncate text-left transition hover:text-[#1a73e8] dark:hover:text-sky-300" @click="fileTreeStore.navigate(crumb.path)">{{ crumb.label === 'Root' ? 'Drive Saya' : crumb.label }}</button>
 						<IconChevronRight v-if="index < breadcrumbs.length - 1" :size="18" :stroke="2" class="mx-1 text-[#5f6368] dark:text-slate-400" />
@@ -364,7 +371,7 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :primary-file="primarySelectedFile" @clear="clearSelection" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
+				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :primary-file="primarySelectedFile" @clear="clearSelection" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="onDownloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
 					<template #prefix="{ primary }">
 						<button v-if="primary?.is_folder && selectedCount === 1" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.open')" @click="openSelectedItem">
 							<IconFolder :size="18" :stroke="2" />
@@ -375,7 +382,7 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div v-if="!isGridView" class="relative">
-				<div class="custom-scrollbar overflow-x-auto rounded-2xl border border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800">
+				<div class="custom-scrollbar overflow-x-auto rounded-2xl border border-[#e0e3e7] bg-white dark:border-[#272e39] dark:bg-[#12161d]">
 					<div class="md:min-w-[760px]">
 						<div class="custom-scrollbar max-h-[min(70vh,780px)] overflow-y-auto overflow-x-hidden" @scroll="handleListScroll">
 							<FileListHeader :sortable="true" :sort-by="sortBy" :sort-direction="sortDirection" @sort="setSort" />
@@ -392,13 +399,13 @@ onBeforeUnmount(() => {
 			<div v-else class="relative">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<FileListGridCard v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :selection-active="selectedCount > 0" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
-					<div v-if="!sortedFiles.length && !isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('drive.noFiles') }}</div>
+					<div v-if="!sortedFiles.length && !isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-[#272e39] dark:bg-[#12161d] dark:text-slate-400">{{ t('drive.noFiles') }}</div>
 					<FileListSkeleton v-if="isLoading" variant="card" :count="8" class="col-span-full" />
 				</div>
 				<LoadingState v-if="actionInProgress" variant="overlay" :message="actionLabel || t('drive.processing')" />
 			</div>
 
-			<FileListContextMenu :context-menu-ref="contextMenuRef" :context-menu="contextMenu" :selected-count="selectedCount" :primary-selected-file="primarySelectedFile" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :can-show-details="selectedCount === 1" :can-open-folder="canOpenSelection" @open-folder="openSelectedItem" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile" @close="closeContextMenu" />
+			<FileListContextMenu :context-menu-ref="contextMenuRef" :context-menu="contextMenu" :selected-count="selectedCount" :primary-selected-file="primarySelectedFile" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :can-show-details="selectedCount === 1" :can-open-folder="canOpenSelection" @open-folder="openSelectedItem" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="onDownloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile" @close="closeContextMenu" />
 
 			<FileDetailsModal :file="detailsFile" :is-open="isDetailsOpen" :is-folder="detailsFile?.is_folder" :provider-label-fn="providerLabel" @close="closeDetails" />
 			<FilePreviewModal :file="previewFile" :is-open="isPreviewOpen" :is-loading="isPreviewLoading" @close="closePreview" @loaded="handlePreviewLoaded" @failed="handlePreviewFailed" />
