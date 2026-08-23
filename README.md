@@ -2,6 +2,10 @@
   <img src="frontend/src/assets/nimbo-logo.svg" alt="Nimbo" width="180">
 </p>
 
+<p align="center">
+  <a href="SELF-HOSTING.md"><img alt="Deploy to Cloudflare" src="https://img.shields.io/badge/Deploy_to_Cloudflare-Self--host-380F76?style=for-the-badge&logo=cloudflare&logoColor=white"></a>
+  <a href="SELF-HOSTING.md"><img alt="Docs" src="https://img.shields.io/badge/Self--hosting_guide-ES%2FEN-1a73e8?style=for-the-badge"></a>
+</p>
 # Nimbo ☁️
 
 **Todas tus nubes, una sola casa.**
