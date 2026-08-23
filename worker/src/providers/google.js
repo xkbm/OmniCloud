@@ -181,7 +181,9 @@ export async function syncGoogleAccount(env, userId, account) {
   };
   const db = sql(env);
   const folderMode = String(env.SYNC_FOLDER_MODE || 'fm') === 'vf';
-  await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
+  // Incremental sync (auto-sync safe): upsert every record first, then delete
+  // only rows whose remote id vanished from Drive. No blanket DELETE -> listings
+  // and uploads never observe an empty metadata window mid-sync.
   for (const file of files) {
     const isFolder = file.mimeType === FOLDER_MIME;
     if (folderMode && isFolder) {
@@ -199,7 +201,24 @@ export async function syncGoogleAccount(env, userId, account) {
     await db`
       INSERT INTO file_metadata (id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type, cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time)
       VALUES (${crypto.randomUUID()}, ${userId}, ${folderPath(file)}, ${file.name}, ${isFolder}, ${Boolean(file.starred)}, ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null}, ${file.createdTime || null}, ${file.modifiedTime || null})
+      ON CONFLICT (cloud_account_id, remote_file_id) DO UPDATE SET
+        virtual_path=EXCLUDED.virtual_path,
+        file_name=EXCLUDED.file_name,
+        is_folder=EXCLUDED.is_folder,
+        is_starred=EXCLUDED.is_starred,
+        size=EXCLUDED.size,
+        mime_type=EXCLUDED.mime_type,
+        remote_parent_id=EXCLUDED.remote_parent_id,
+        remote_created_time=EXCLUDED.remote_created_time,
+        remote_modified_time=EXCLUDED.remote_modified_time,
+        updated_at=NOW()
     `;
+  }
+  const syncedIds = files.map((file) => file.id);
+  if (syncedIds.length) {
+    await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id} AND NOT (remote_file_id = ANY(${syncedIds}))`;
+  } else {
+    await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
   }
   if (folderMode) {
     // Prune: materializations whose remote folder vanished in Drive become 'deleted';
