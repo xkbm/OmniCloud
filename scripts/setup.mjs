@@ -51,7 +51,7 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 
 console.log('🚀 OmniCloud self-hosting setup\n');
 
-const dbName = await ask(rl, 'Project base name (used for Worker + Pages): ', 'omnicloud');
+const dbName = await ask(rl, 'Project base name (used for Worker + Pages): ', flag('name') || 'omnicloud');
 const databaseUrl = await ask(rl, 'Neon/Postgres DATABASE_URL: ', flag('url') || '');
 
 if (!/^postgres(ql)?:\/\//.test(databaseUrl)) {
@@ -66,7 +66,7 @@ console.log('\n🔐 Generated ENCRYPTION_KEY + AUTH_SECRET locally.\n');
 
 // 2. Patch wrangler configs so every name stays consistent.
 patchFile(path.join(workerDir, 'wrangler.toml'), [
-	['name = "[^"]*"', `name = "${dbName}-api"`],
+	['^name = "[^"]*"', `name = "${dbName}-api"`],
 	['FRONTEND_URL = "[^"]*"',
 		`FRONTEND_URL = ""  # set after first deploy: https://<project>.pages.dev`],
 ]);
