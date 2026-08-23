@@ -139,7 +139,7 @@ function handleDrop(event) {
 
 <template>
   <div
-    class="group grid min-h-[52px] cursor-default select-none grid-cols-[minmax(260px,2fr)_minmax(150px,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] transition first:border-t-0 dark:border-slate-700 max-md:grid-cols-[minmax(0,1fr)_90px]"
+    class="group grid min-h-[52px] cursor-default select-none grid-cols-[minmax(260px,2fr)_minmax(150px,1fr)_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] transition first:border-t-0 dark:border-[#272e39] max-md:grid-cols-[minmax(0,1fr)_90px]"
     :class="[
       selected ? 'bg-gradient-to-r from-[#e8f0fe] to-[#f8fbff] shadow-[inset_4px_0_0_#1a73e8] dark:from-sky-500/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#38bdf8]' : isDropTarget ? 'bg-gradient-to-r from-sky-50 to-[#f7fbff] shadow-[inset_4px_0_0_#0ea5e9] ring-2 ring-inset ring-sky-400/70 dark:from-sky-400/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#38bdf8]' : highlighted ? 'bg-gradient-to-r from-amber-50 to-[#fffdf5] shadow-[inset_4px_0_0_#f59e0b] dark:from-amber-400/15 dark:to-slate-800 dark:shadow-[inset_4px_0_0_#fbbf24]' : 'hover:bg-black/[0.02] dark:hover:bg-white/6',
       isDragging ? 'opacity-45' : '',

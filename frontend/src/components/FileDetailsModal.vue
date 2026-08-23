@@ -42,7 +42,7 @@ function onBackdropClick() {
 
 <template>
 	<div v-if="isVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4" @click="onBackdropClick">
-		<div class="w-full max-w-lg rounded-[28px] bg-white p-6 text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-slate-800 dark:text-slate-100" @click.stop>
+		<div class="w-full max-w-lg rounded-[28px] bg-white p-6 text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-[#12161d] dark:text-slate-100" @click.stop>
 			<div class="flex items-start justify-between gap-4">
 				<div>
 					<h3 class="text-xl font-semibold">{{ title }}</h3>

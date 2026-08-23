@@ -143,7 +143,7 @@ function handleDrop(event) {
   <div
     class="group select-none rounded-[22px] border p-4 transition hover:-translate-y-0.5 hover:border-[#d2e3fc] hover:shadow-[0_10px_30px_rgba(32,33,36,0.08)] dark:hover:border-slate-500"
     :class="[
-      selected ? 'border-[#1a73e8] bg-gradient-to-br from-[#e8f0fe] to-[#f8fbff] shadow-[0_14px_34px_rgba(26,115,232,0.14)] dark:border-sky-400 dark:from-sky-500/15 dark:to-slate-800' : isDropTarget ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-[#f7fbff] shadow-[0_14px_34px_rgba(14,165,233,0.14)] ring-2 ring-sky-400/50 dark:border-sky-300 dark:from-sky-400/15 dark:to-slate-800' : highlighted ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-[#fffdf5] shadow-[0_14px_34px_rgba(245,158,11,0.14)] ring-2 ring-amber-400/50 dark:border-amber-300 dark:from-amber-400/15 dark:to-slate-800' : 'border-[#e0e3e7] bg-white dark:border-slate-700 dark:bg-slate-800',
+      selected ? 'border-[#1a73e8] bg-gradient-to-br from-[#e8f0fe] to-[#f8fbff] shadow-[0_14px_34px_rgba(26,115,232,0.14)] dark:border-sky-400 dark:from-sky-500/15 dark:to-slate-800' : isDropTarget ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-[#f7fbff] shadow-[0_14px_34px_rgba(14,165,233,0.14)] ring-2 ring-sky-400/50 dark:border-sky-300 dark:from-sky-400/15 dark:to-slate-800' : highlighted ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-[#fffdf5] shadow-[0_14px_34px_rgba(245,158,11,0.14)] ring-2 ring-amber-400/50 dark:border-amber-300 dark:from-amber-400/15 dark:to-slate-800' : 'border-[#e0e3e7] bg-white dark:border-[#272e39] dark:bg-[#12161d]',
       isDragging ? 'opacity-45' : '',
     ]"
     :data-file-id="item.id"

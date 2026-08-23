@@ -175,21 +175,21 @@ function iconFor(upload) {
 </script>
 
 <template>
-	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-[calc(76px+env(safe-area-inset-bottom))] left-2 right-2 z-50 overflow-hidden rounded-t-[18px] border border-b-0 border-[#e6ebf2] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)] sm:left-auto sm:right-4 sm:w-[360px] lg:bottom-0">
+	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-[calc(76px+env(safe-area-inset-bottom))] left-2 right-2 z-50 overflow-hidden rounded-t-[18px] border border-b-0 border-[#e6ebf2] bg-white shadow-sm dark:border-[#272e39] dark:bg-[#07090d] dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)] sm:left-auto sm:right-4 sm:w-[360px] lg:bottom-0">
 		<header class="flex h-[54px] items-center justify-between gap-3 px-5 text-[#202124] dark:text-slate-100">
 			<strong class="text-base font-medium">{{ toastTitle }}</strong>
 			<div class="flex items-center gap-2">
-				<button type="button" class="grid size-8 place-items-center rounded-full text-[#202124] transition hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-800" :title="isMinimized ? t('upload.expand') : t('upload.minimize')" @click="isMinimized = !isMinimized">
+				<button type="button" class="grid size-8 place-items-center rounded-full text-[#202124] transition hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#1b2029]" :title="isMinimized ? t('upload.expand') : t('upload.minimize')" @click="isMinimized = !isMinimized">
 					<component :is="isMinimized ? IconChevronUp : IconChevronDown" :size="20" :stroke="2.2" />
 				</button>
-				<button type="button" class="grid size-8 place-items-center rounded-full text-[#202124] transition hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-800" :title="t('upload.dismiss')" @click="closeToast">
+				<button type="button" class="grid size-8 place-items-center rounded-full text-[#202124] transition hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#1b2029]" :title="t('upload.dismiss')" @click="closeToast">
 					<IconX :size="22" :stroke="2.2" />
 				</button>
 			</div>
 		</header>
 
 		<div v-show="!isMinimized">
-			<div class="flex h-9 items-center justify-between bg-[#fbfcff] px-5 text-sm text-[#5f6368] dark:bg-slate-800/70 dark:text-slate-300">
+			<div class="flex h-9 items-center justify-between bg-[#fbfcff] px-5 text-sm text-[#5f6368] dark:bg-[#141821]/70 dark:text-slate-300">
 				<span>{{ summaryText }}</span>
 				<span v-if="activeCount" class="font-medium text-[#1a73e8]">{{ totalProgress }}%</span>
 			</div>
@@ -201,14 +201,14 @@ function iconFor(upload) {
 					<IconPlugConnectedX v-else :size="14" :stroke="2" />
 					<span>{{ reauthProviderName ? t('upload.reconnectProvider', { provider: reauthProviderName }) : t('upload.reconnectAccount') }}</span>
 				</button>
-				<button type="button" class="inline-flex h-8 shrink-0 items-center rounded-full border border-[#f3c7c4] bg-white px-3.5 text-xs font-medium text-[#c5221f] transition hover:bg-[#fce8e6] disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300" :disabled="isReconnecting" @click="router.push('/quota')">
+				<button type="button" class="inline-flex h-8 shrink-0 items-center rounded-full border border-[#f3c7c4] bg-white px-3.5 text-xs font-medium text-[#c5221f] transition hover:bg-[#fce8e6] disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-[#07090d] dark:text-red-300" :disabled="isReconnecting" @click="router.push('/quota')">
 					{{ t('upload.goToStorage') }}
 				</button>
 			</div>
 
 			<div class="max-h-[260px] overflow-y-auto py-2">
-				<div v-for="upload in visibleUploads" :key="upload.id" class="group grid grid-cols-[28px_minmax(0,1fr)_36px] items-center gap-4 border-t border-[#eef2f7] px-5 py-3 text-sm text-[#5f6368] first:border-t-0 hover:bg-[#f8fafd] dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800/70">
-					<div class="grid size-8 place-items-center rounded-md bg-[#e8f0fe] text-[#1a73e8] dark:bg-slate-800 dark:text-sky-300">
+				<div v-for="upload in visibleUploads" :key="upload.id" class="group grid grid-cols-[28px_minmax(0,1fr)_36px] items-center gap-4 border-t border-[#eef2f7] px-5 py-3 text-sm text-[#5f6368] first:border-t-0 hover:bg-[#f8fafd] dark:border-slate-800 dark:text-slate-300 dark:hover:bg-[#1b2029]/70">
+					<div class="grid size-8 place-items-center rounded-md bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#12161d] dark:text-sky-300">
 						<component :is="iconFor(upload)" :size="17" :stroke="1.9" />
 					</div>
 					<div class="min-w-0">
@@ -221,20 +221,20 @@ function iconFor(upload) {
 						<p class="truncate text-xs text-[#7b8087] dark:text-slate-400">{{ formatStatus(upload) }}</p>
 					</div>
 					<div class="grid place-items-end">
-						<button v-if="canCancel(upload)" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-slate-800" :title="t('upload.cancel')" @click="emit('close-item', upload.id)">
+						<button v-if="canCancel(upload)" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-[#1b2029]" :title="t('upload.cancel')" @click="emit('close-item', upload.id)">
 							<IconLoader2 :size="22" :stroke="2" class="absolute animate-spin text-[#1a73e8] transition-opacity group-hover:opacity-0" />
 							<IconX :size="18" :stroke="2.2" class="text-[#c5221f] opacity-0 transition-opacity group-hover:opacity-100" />
 						</button>
 						<IconLoader2 v-else-if="upload.status !== 'completed' && upload.status !== 'failed' && upload.status !== 'cancelled'" :size="22" :stroke="2" class="animate-spin text-[#1a73e8]" />
-						<button v-else-if="upload.status === 'completed'" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-slate-800" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
+						<button v-else-if="upload.status === 'completed'" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-[#1b2029]" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
 							<IconCheck :size="22" :stroke="2.2" class="absolute text-[#188038] transition-opacity group-hover:opacity-0" />
 							<IconFilter2X :size="18" :stroke="2.2" class="opacity-0 transition-opacity group-hover:opacity-100" />
 						</button>
-						<button v-else-if="upload.status === 'cancelled'" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-slate-800" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
+						<button v-else-if="upload.status === 'cancelled'" type="button" class="relative grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-[#1b2029]" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
 							<IconX :size="20" :stroke="2.2" class="absolute text-[#c5221f] transition-opacity group-hover:opacity-0" />
 							<IconFilter2X :size="18" :stroke="2.2" class="opacity-0 transition-opacity group-hover:opacity-100" />
 						</button>
-						<button v-else type="button" class="grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-slate-800" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
+						<button v-else type="button" class="grid size-7 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7] dark:text-slate-300 dark:hover:bg-[#1b2029]" :title="t('upload.dismiss')" @click="emit('close-item', upload.id)">
 							<IconFilter2X :size="18" :stroke="2.2" />
 						</button>
 					</div>

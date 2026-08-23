@@ -97,7 +97,7 @@ watch(
 <template>
 	<Transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition duration-150 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
 		<div v-if="open" class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 px-4 py-8 backdrop-blur-sm" @click.self="closeModal">
-			<div class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[#dfe6f1] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-4rem)] sm:rounded-[30px] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_28px_80px_rgba(2,6,23,0.65)]">
+			<div class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[#dfe6f1] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-4rem)] sm:rounded-[30px] dark:border-[#272e39] dark:bg-[#07090d] dark:shadow-[0_28px_80px_rgba(2,6,23,0.65)]">
 				<button type="button" class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full text-[#5f6368] transition hover:bg-black/5 dark:text-slate-300 dark:hover:bg-white/10" :aria-label="t('common.close')" @click="closeModal">
 					<IconX :size="20" :stroke="2" />
 				</button>
@@ -109,8 +109,8 @@ watch(
 
 				<div class="space-y-5 overflow-y-auto p-5 sm:p-6 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_58%)]">
 					<div class="grid gap-3 sm:grid-cols-[1fr_auto]">
-						<a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer" class="group flex items-center gap-3 rounded-[24px] border border-[#e7edf6] bg-[#f8fafd] p-4 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.12)] dark:border-slate-800 dark:bg-slate-800/70 dark:hover:border-blue-400/40 dark:hover:bg-slate-800">
-							<span class="grid size-12 place-items-center rounded-2xl bg-white text-[#202124] shadow-sm dark:bg-slate-900 dark:text-slate-100">
+						<a href="https://github.com/xkbm/omnicloud" target="_blank" rel="noreferrer" class="group flex items-center gap-3 rounded-[24px] border border-[#e7edf6] bg-[#f8fafd] p-4 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.12)] dark:border-slate-800 dark:bg-[#141821]/70 dark:hover:border-blue-400/40 dark:hover:bg-[#1b2029]">
+							<span class="grid size-12 place-items-center rounded-2xl bg-white text-[#202124] shadow-sm dark:bg-[#07090d] dark:text-slate-100">
 								<IconBrandGithub :size="24" :stroke="2" />
 							</span>
 							<span class="min-w-0 flex-1">
@@ -129,7 +129,7 @@ watch(
 						</div>
 					</div>
 
-					<div class="rounded-[26px] border border-[#e7edf6] bg-white p-4 dark:border-slate-800 dark:bg-slate-800/60">
+					<div class="rounded-[26px] border border-[#e7edf6] bg-white p-4 dark:border-slate-800 dark:bg-[#141821]/60">
 						<div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div>
 								<h4 class="text-sm font-semibold text-[#202124] dark:text-slate-100">{{ t('updates.latestUpdates') }}</h4>
@@ -149,14 +149,14 @@ watch(
 							{{ errorMessage }}
 						</div>
 
-						<div v-else-if="isLoading && !commits.length" class="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-[#dfe6f1] p-8 text-sm text-[#5f6368] dark:border-slate-700 dark:text-slate-400">
+						<div v-else-if="isLoading && !commits.length" class="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-[#dfe6f1] p-8 text-sm text-[#5f6368] dark:border-[#272e39] dark:text-slate-400">
 							<IconLoader2 :size="20" :stroke="2" class="animate-spin" />
 							<span>{{ t('updates.loading') }}</span>
 						</div>
 
 						<div v-else class="space-y-3">
-							<a v-for="commit in commits" :key="commit.sha" :href="commit.url" target="_blank" rel="noreferrer" class="group flex gap-3 rounded-2xl border border-[#e7edf6] bg-[#f8fafd] p-3 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.1)] dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-blue-400/40 dark:hover:bg-slate-900">
-								<span class="mt-0.5 grid size-10 shrink-0 place-items-center rounded-2xl bg-white text-[#1a73e8] shadow-sm dark:bg-slate-800 dark:text-blue-300">
+							<a v-for="commit in commits" :key="commit.sha" :href="commit.url" target="_blank" rel="noreferrer" class="group flex gap-3 rounded-2xl border border-[#e7edf6] bg-[#f8fafd] p-3 transition hover:-translate-y-0.5 hover:border-[#bfdbfe] hover:bg-white hover:shadow-[0_14px_28px_rgba(26,115,232,0.1)] dark:border-[#272e39] dark:bg-[#07090d]/60 dark:hover:border-blue-400/40 dark:hover:bg-slate-900">
+								<span class="mt-0.5 grid size-10 shrink-0 place-items-center rounded-2xl bg-white text-[#1a73e8] shadow-sm dark:bg-[#12161d] dark:text-blue-300">
 									<IconGitCommit :size="20" :stroke="2" />
 								</span>
 								<span class="min-w-0 flex-1">

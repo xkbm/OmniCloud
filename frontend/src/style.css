@@ -21,7 +21,7 @@
 		transition: background-color 180ms ease, color 180ms ease;
 	}
 
-	.dark body { background: #0f172a; color: #e5e7eb; }
+	.dark body { background: radial-gradient(1200px 600px at 50% -10%, #12161d 0%, #0a0d12 45%, #05070a 100%); color: #e5e7eb; }
 	a { color: inherit; text-decoration: none; }
 	button { cursor: pointer; }
 	* { scrollbar-width: thin; scrollbar-color: #8ab4f8 transparent; }

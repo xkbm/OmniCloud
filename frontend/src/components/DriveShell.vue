@@ -338,7 +338,7 @@ const profileLinks = [
 </script>
 
 <template>
-	<div class="min-h-screen bg-[#f8fafd] text-[#202124] dark:bg-slate-900 dark:text-slate-100">
+	<div class="min-h-screen bg-[#f8fafd] text-[#202124] dark:bg-[#04060a] dark:text-slate-100">
 		<HelpModal :open="isHelpModalOpen" @close="closeHelpModal" />
 		<ProfileModal :open="isProfileModalOpen" :profile-links="profileLinks" @close="closeProfileModal" />
 		<LanguageModal :open="isLanguageModalOpen" @close="closeLanguageModal" />
@@ -351,15 +351,15 @@ const profileLinks = [
 					<IconMenu2 :size="22" :stroke="2" />
 				</button>
 				<div class="hidden items-center gap-2 lg:flex">
-					<button type="button" class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white transition hover:scale-[1.03] focus:outline-none focus:ring-4 focus:ring-[#1a73e8]/20 dark:bg-slate-800 dark:focus:ring-blue-400/20" :aria-label="t('header.openProfile')" @click="openProfileModal">
-						<img :src="logoUrl" alt="Nimbo logo" class="size-full object-cover" />
+					<button type="button" class="grid size-16 place-items-center transition hover:scale-[1.05] focus:outline-none focus:ring-4 focus:ring-[#1a73e8]/20" :aria-label="t('header.openProfile')" @click="openProfileModal">
+						<img :src="logoUrl" alt="Nimbo logo" class="size-full object-contain drop-shadow-[0_2px_6px_rgba(59,130,246,0.35)]" />
 					</button>
 					<div class="text-[22px] font-medium text-[#5f6368] dark:text-slate-300">Nimbo</div>
 				</div>
 			</div>
 
 			<div ref="searchRef" class="relative min-w-0 max-w-full">
-				<div class="grid h-11 grid-cols-[44px_minmax(0,1fr)_42px] items-center rounded-full bg-[#eaf1fb] pr-1.5 dark:bg-slate-800/90 sm:h-12 sm:grid-cols-[52px_minmax(0,1fr)_48px] sm:pr-2.5">
+				<div class="grid h-11 grid-cols-[44px_minmax(0,1fr)_42px] items-center rounded-full bg-[#eaf1fb] pr-1.5 dark:bg-[#12161d]/90 sm:h-12 sm:grid-cols-[52px_minmax(0,1fr)_48px] sm:pr-2.5">
 					<span class="grid place-items-center text-[#5f6368] dark:text-slate-400">
 						<IconSearch :size="18" :stroke="2" />
 					</span>
@@ -369,13 +369,13 @@ const profileLinks = [
 					</button>
 				</div>
 
-				<div v-if="isGlobalSearchOpen && globalSearchTerm.trim()" ref="globalSearchResultsRef" class="fixed left-2 right-2 top-16 z-50 overflow-hidden rounded-3xl border border-[#dfe6f1] bg-white/98 shadow-[0_18px_50px_rgba(60,64,67,0.24)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/98 dark:shadow-[0_18px_50px_rgba(2,6,23,0.5)] lg:absolute lg:left-0 lg:right-0 lg:top-[calc(100%+8px)]">
+				<div v-if="isGlobalSearchOpen && globalSearchTerm.trim()" ref="globalSearchResultsRef" class="fixed left-2 right-2 top-16 z-50 overflow-hidden rounded-3xl border border-[#dfe6f1] bg-white/98 shadow-[0_18px_50px_rgba(60,64,67,0.24)] backdrop-blur-xl dark:border-[#272e39] dark:bg-[#0a0d12]/98 dark:shadow-[0_18px_50px_rgba(2,6,23,0.5)] lg:absolute lg:left-0 lg:right-0 lg:top-[calc(100%+8px)]">
 					<div class="custom-scrollbar max-h-[min(420px,70vh)] overflow-y-auto py-2" @scroll="handleGlobalSearchScroll">
 						<div v-if="isGlobalSearchLoading && !globalSearchResults.length" class="px-4 py-4 text-sm text-[#5f6368] dark:text-slate-400">{{ t('header.searchLoading') }}</div>
 						<div v-else-if="globalSearchError" class="px-4 py-4 text-sm text-red-600 dark:text-red-300">{{ globalSearchError }}</div>
 						<div v-else-if="!globalSearchResults.length" class="px-4 py-4 text-sm text-[#5f6368] dark:text-slate-400">{{ t('header.searchNoResults') }}</div>
 						<template v-else>
-							<button v-for="(item, itemIndex) in renderedGlobalSearchResults" :key="item.id" type="button" class="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[#f8fafd] dark:hover:bg-slate-800/80" :data-active-result="itemIndex === activeSearchResultIndex" :class="itemIndex === activeSearchResultIndex ? 'bg-[#f8fafd] dark:bg-slate-800/80' : ''" @mouseenter="activeSearchResultIndex = itemIndex" @click="openSearchResult(item)">
+							<button v-for="(item, itemIndex) in renderedGlobalSearchResults" :key="item.id" type="button" class="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[#f8fafd] dark:hover:bg-[#1b2029]/80" :data-active-result="itemIndex === activeSearchResultIndex" :class="itemIndex === activeSearchResultIndex ? 'bg-[#f8fafd] dark:bg-[#141821]/80' : ''" @mouseenter="activeSearchResultIndex = itemIndex" @click="openSearchResult(item)">
 								<span class="grid size-9 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
 									<component :is="getFileIcon(item, item.is_folder)" :size="18" :stroke="item.is_folder ? 0 : 1.8" />
 								</span>
@@ -418,11 +418,11 @@ const profileLinks = [
 
 		<Transition enter-active-class="transition duration-200 ease-out" enter-from-class="-translate-y-2 opacity-0 scale-95" enter-to-class="translate-y-0 opacity-100 scale-100" leave-active-class="transition duration-150 ease-in" leave-from-class="translate-y-0 opacity-100 scale-100" leave-to-class="-translate-y-2 opacity-0 scale-95">
 			<div v-if="isMobileNavOpen" class="fixed left-2 right-2 top-16 z-50 lg:hidden" data-mobile-nav-card>
-				<div class="max-h-[calc(100vh-16px)] overflow-y-auto rounded-[28px] border border-[#dfe6f1] bg-white/95 p-4 text-[#202124] shadow-[0_20px_60px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
+				<div class="max-h-[calc(100vh-16px)] overflow-y-auto rounded-[28px] border border-[#dfe6f1] bg-white/95 p-4 text-[#202124] shadow-[0_20px_60px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-[#272e39] dark:bg-[#0a0d12]/95 dark:text-slate-100">
 					<div class="mb-5 flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2">
-							<span class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white dark:bg-slate-800">
-								<img :src="logoUrl" alt="Nimbo logo" class="size-full object-cover" />
+							<span class="grid size-12 place-items-center overflow-hidden">
+								<img :src="logoUrl" alt="Nimbo logo" class="size-full object-contain drop-shadow-[0_2px_6px_rgba(59,130,246,0.35)]" />
 							</span>
 							<span class="text-xl font-medium text-[#5f6368] dark:text-slate-300">Nimbo</span>
 						</div>
@@ -437,16 +437,16 @@ const profileLinks = [
 							<span>{{ t('common.new') }}</span>
 						</button>
 
-						<div v-if="isCreateMenuOpen" class="absolute left-0 top-[calc(100%+10px)] z-30 w-full overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-slate-700 dark:bg-slate-800">
-							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('new-folder')">
+						<div v-if="isCreateMenuOpen" class="absolute left-0 top-[calc(100%+10px)] z-30 w-full overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-[#272e39] dark:bg-[#12161d]">
+							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('new-folder')">
 								<span>{{ t('sidebar.newFolder') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 							</button>
-							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-files')">
+							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('upload-files')">
 								<span>{{ t('sidebar.uploadFile') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 							</button>
-							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-folder')">
+							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('upload-folder')">
 								<span>{{ t('sidebar.uploadFolder') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 							</button>
@@ -464,7 +464,7 @@ const profileLinks = [
 						</button>
 					</nav>
 
-					<div class="mt-4 rounded-[24px] border border-[#dfe6f1] bg-[#f8fafd] p-4 dark:border-slate-700 dark:bg-slate-800/80">
+					<div class="mt-4 rounded-[24px] border border-[#dfe6f1] bg-[#f8fafd] p-4 dark:border-[#272e39] dark:bg-[#141821]/80">
 						<div class="mb-3 flex items-center justify-between gap-3">
 							<div class="min-w-0 flex-1 flex items-center gap-2.5">
 								<span class="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
@@ -485,16 +485,16 @@ const profileLinks = [
 			</div>
 		</Transition>
 
-		<div v-if="isFabMenuOpen" ref="fabRef" class="fixed bottom-[calc(96px+env(safe-area-inset-bottom))] right-4 z-40 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-slate-700 dark:bg-slate-800 lg:hidden">
-				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('new-folder')">
+		<div v-if="isFabMenuOpen" ref="fabRef" class="fixed bottom-[calc(96px+env(safe-area-inset-bottom))] right-4 z-40 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-[#272e39] dark:bg-[#12161d] lg:hidden">
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runFabAction('new-folder')">
 					<span>{{ t('sidebar.newFolder') }}</span>
 					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 				</button>
-				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('upload-files')">
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runFabAction('upload-files')">
 					<span>{{ t('sidebar.uploadFile') }}</span>
 					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 				</button>
-				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runFabAction('upload-folder')">
+				<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runFabAction('upload-folder')">
 					<span>{{ t('sidebar.uploadFolder') }}</span>
 					<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 				</button>
@@ -504,7 +504,7 @@ const profileLinks = [
 				<IconPlus :size="26" :stroke="2" />
 			</button>
 
-			<nav class="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-[#e0e3e7] bg-white/95 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 lg:hidden [padding-bottom:env(safe-area-inset-bottom)]">
+			<nav class="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-[#e0e3e7] bg-white/95 backdrop-blur dark:border-[#272e39] dark:bg-[#0a0d12]/95 lg:hidden [padding-bottom:env(safe-area-inset-bottom)]">
 				<RouterLink v-for="tab in mobileTabs" :key="tab.id" :to="tab.to" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px]" :class="props.currentSection === tab.id ? 'font-semibold text-[#1a73e8] dark:text-blue-300' : 'text-[#5f6368] dark:text-slate-400'">
 					<component :is="props.currentSection === tab.id ? tab.activeIcon : tab.icon" :size="22" :stroke="props.currentSection === tab.id ? 1.5 : 2" />
 					<span class="w-full truncate text-center">{{ tab.label }}</span>
@@ -518,21 +518,21 @@ const profileLinks = [
 			<div class="grid grid-cols-1 gap-3 lg:grid-cols-[256px_minmax(0,1fr)]">
 			<aside class="hidden pb-6 pl-4 pr-3 pt-2 lg:flex lg:min-h-[calc(100vh-4rem)] lg:flex-col">
 				<div ref="createMenuRef" class="relative inline-block">
-					<button type="button" class="inline-flex h-14 items-center gap-3.5 rounded-2xl bg-white px-[18px] pr-[22px] font-medium text-[#3c4043] shadow-[0_1px_3px_rgba(60,64,67,0.3),0_4px_8px_rgba(60,64,67,0.15)] dark:bg-slate-800 dark:text-slate-100 dark:shadow-[0_10px_30px_rgba(15,23,42,0.45)]" @click.stop="toggleCreateMenu">
+					<button type="button" class="inline-flex h-14 items-center gap-3.5 rounded-2xl bg-white px-[18px] pr-[22px] font-medium text-[#3c4043] shadow-[0_1px_3px_rgba(60,64,67,0.3),0_4px_8px_rgba(60,64,67,0.15)] dark:bg-[#12161d] dark:text-slate-100 dark:shadow-[0_10px_30px_rgba(15,23,42,0.45)]" @click.stop="toggleCreateMenu">
 						<IconPlus :size="22" :stroke="2" />
 						<span>{{ t('common.new') }}</span>
 					</button>
 
-					<div v-if="isCreateMenuOpen" class="absolute left-0 top-[calc(100%+10px)] z-30 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_12px_36px_rgba(15,23,42,0.45)]">
-						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('new-folder')">
+					<div v-if="isCreateMenuOpen" class="absolute left-0 top-[calc(100%+10px)] z-30 w-56 overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_12px_36px_rgba(60,64,67,0.2)] dark:border-[#272e39] dark:bg-[#12161d] dark:shadow-[0_12px_36px_rgba(15,23,42,0.45)]">
+						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('new-folder')">
 							<span>{{ t('sidebar.newFolder') }}</span>
 							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 						</button>
-						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-files')">
+						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('upload-files')">
 							<span>{{ t('sidebar.uploadFile') }}</span>
 							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 						</button>
-						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-folder')">
+						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-[#20262f]/70" @click="runCreateAction('upload-folder')">
 							<span>{{ t('sidebar.uploadFolder') }}</span>
 							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 						</button>
@@ -546,7 +546,7 @@ const profileLinks = [
 					</RouterLink>
 				</nav>
 
-				<RouterLink to="/quota" class="sticky bottom-4 mt-auto block rounded-[24px] border border-[#dfe6f1] bg-white/70 p-4 text-[#202124] shadow-[0_12px_32px_rgba(60,64,67,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_40px_rgba(60,64,67,0.14)] dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800">
+				<RouterLink to="/quota" class="sticky bottom-4 mt-auto block rounded-[24px] border border-[#dfe6f1] bg-white/70 p-4 text-[#202124] shadow-[0_12px_32px_rgba(60,64,67,0.08)] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_40px_rgba(60,64,67,0.14)] dark:border-[#272e39]/80 dark:bg-[#141821]/70 dark:text-slate-100 dark:hover:bg-[#1b2029]">
 					<div class="mb-3 flex items-center justify-between gap-3">
 						<div class="min-w-0 flex-1 flex items-center gap-2.5">
 							<span class="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">
