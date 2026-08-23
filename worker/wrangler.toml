@@ -15,7 +15,7 @@ AI_MODEL = "gemini-3.5-flash-lite"
 # deploys and stay out of your fork. See SELF-HOSTING.md:
 #   GOOGLE_CLIENT_SECRET / GOOGLE_CLIENT_ID / GOOGLE_REDIRECT_URI
 # Public URL of YOUR Pages deployment (OAuth redirects + CORS).
-FRONTEND_URL = "https://omnicloud-4u.pages.dev"
+FRONTEND_URL = "https://nimbo.nimboapp.workers.dev"
 SYNC_FOLDER_MODE = "vf"
 AUTO_SYNC_INTERVAL_MINUTES = "60"
 
