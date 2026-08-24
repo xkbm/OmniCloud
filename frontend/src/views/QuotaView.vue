@@ -438,6 +438,7 @@ async function connectPCloud(payload) {
 		isPCloudModalOpen.value = false;
 	} catch (error) {
 		actionError.value = error.message;
+		isPCloudModalOpen.value = false;
 	} finally {
 		connectingProvider.value = '';
 	}

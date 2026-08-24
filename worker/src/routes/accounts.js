@@ -226,7 +226,7 @@ async function connectMega(env, userId, { email, password, secondFactorCode }) {
 
 function sha1Hex(value) { return createHash('sha1').update(value).digest('hex'); }
 
-async function pcloudGet(host, method, params = {}) {
+async function pcloudGet(host, method, params = {}) { console.log("[pcloud] GET", host, method);
   const url = new URL(`https://${host}/${method}`);
   Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== null) url.searchParams.set(key, String(value)); });
   const response = await fetch(url);
