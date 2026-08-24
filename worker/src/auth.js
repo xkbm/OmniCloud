@@ -140,6 +140,27 @@ export async function login(env, email, password) {
   return { user, token, expiresAt };
 }
 
+export async function registerFirstUser(env, email, password) {
+  if (env.APP_MODE !== 'hosted') throw new Error('Registration is only available in hosted mode');
+  if (String(password || '').length < PASSWORD_MIN_LENGTH) throw new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+
+  const sql = getSql(env);
+  const count = await sql`SELECT COUNT(*)::int AS total FROM users`;
+  if ((count[0]?.total || 0) > 0) throw Object.assign(new Error('Registration is closed'), { status: 403 });
+
+  const normalizedEmail = normalizeEmail(email);
+  const existing = await sql`SELECT id FROM users WHERE email=${normalizedEmail} LIMIT 1`;
+  if (existing.length) throw Object.assign(new Error('Email already in use'), { status: 409 });
+
+  const userId = randomUUID();
+  await sql`
+    INSERT INTO users (id, email, password_hash, is_local)
+    VALUES (${userId}, ${normalizedEmail}, ${hashPassword(password)}, TRUE)
+  `;
+
+  return login(env, normalizedEmail, password);
+}
+
 export async function logout(env, token) {
   if (!token) return;
   const sql = getSql(env);
