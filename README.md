@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="frontend/src/assets/nimbo-logo.svg" alt="Nimbo" width="180">
 </p>
 
@@ -9,6 +9,10 @@
 # Nimbo ☁️
 
 **Todas tus nubes, una sola casa.**
+
+> ⚠️ **BETA — Proyecto en desarrollo activo.** Nimbo es funcional pero joven: muchas características están en pruebas y es probable que encuentres errores. Si decides desplegarlo, hazlo sabiendo que las cosas pueden romperse entre versiones. Reporta problemas en [Issues](https://github.com/xkbm/OmniCloud/issues).
+
+
 
 Nimbo es un espacio de trabajo unificado para tus almacenamientos en la nube: un filesystem virtual que presenta Google Drive (y próximamente más proveedores) como una sola carpeta coherente, con asistente de IA integrado, apps móviles táctiles y sincronización automática. Tus archivos siguen viviendo en tu proveedor — Nimbo solo los hace sentir como uno.
 
