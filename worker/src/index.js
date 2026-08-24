@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { neon } from '@neondatabase/serverless';
@@ -8,6 +9,7 @@ import {
   getUserBySession,
   login,
   logout,
+  registerFirstUser,
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
 import { aiRoutes } from './routes/ai.js';
@@ -37,6 +39,14 @@ const app = new Hono();
 
 app.use('*', async (c, next) => {
 	await ensureDbInitialized(c.env);
+	// Auto-derive ENCRYPTION_KEY/AUTH_SECRET from DATABASE_URL when not set
+	// as explicit secrets. This lets zero-config deployments work out of the box.
+	if (!c.env.ENCRYPTION_KEY && c.env.DATABASE_URL) {
+		c.env.ENCRYPTION_KEY = createHash('sha256').update(c.env.DATABASE_URL + ':nimbo-enc').digest('hex');
+	}
+	if (!c.env.AUTH_SECRET && c.env.DATABASE_URL) {
+		c.env.AUTH_SECRET = createHash('sha256').update(c.env.DATABASE_URL + ':nimbo-auth').digest('hex');
+	}
 	await next();
 });
 
@@ -116,6 +126,30 @@ app.post('/api/auth/login', async (c) => {
   } catch (error) {
     const message = error?.message || 'Login failed';
     return c.json({ error: message }, /Invalid email or password/i.test(message) ? 400 : 500);
+  }
+});
+
+app.get('/api/auth/can-register', async (c) => {
+  try {
+    const db = sql(c.env);
+    const count = await db`SELECT COUNT(*)::int AS total FROM users`;
+    return c.json({ data: { canRegister: (count[0]?.total || 0) === 0 } });
+  } catch { return c.json({ data: { canRegister: false } }); }
+});
+
+app.post('/api/auth/register', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.email || !body.password) return c.json({ error: 'Email and password are required' }, 400);
+    const session = await registerFirstUser(c.env, body.email, body.password);
+    const maxAge = Math.max(1, Number(c.env.AUTH_SESSION_TTL_HOURS || 336)) * 60 * 60;
+    return new Response(JSON.stringify({ data: authSummary(c.env, session.user) }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': authCookie(session.token, c.env, maxAge) },
+    });
+  } catch (error) {
+    const status = error?.status || (/Password must/i.test(error?.message) ? 400 : /Registration is closed|already in use/i.test(error?.message) ? 403 : 500);
+    return c.json({ error: error?.message || 'Registration failed' }, status);
   }
 });
 
