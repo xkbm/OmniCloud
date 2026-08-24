@@ -56,7 +56,7 @@ export async function performDownload(env, account, row) {
 
 export async function performGetMetadata(env, account, row) {
   if (account.provider === 'google_drive') {
-    const data = await googleRequest(env, account, `/${encodeURIComponent(row.remote_file_id)}?fields=id,name,mimeType,size,parents,createdTime,modifiedTime,trashed`);
+    const data = await googleRequest(env, account, `/files/${encodeURIComponent(row.remote_file_id)}?fields=id,name,mimeType,size,parents,createdTime,modifiedTime,trashed`);
     return {
       name: data?.name || row.file_name,
       mime_type: data?.mimeType || row.mime_type || null,

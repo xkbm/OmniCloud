@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { isCoarsePointerDevice } from '../utils/touchDevice.js';
 
 export function useFileSelection({ sourceList, onBeforeSelect } = {}) {
 	const selectedFileIds = ref(new Set());
@@ -61,6 +62,13 @@ export function useFileSelection({ sourceList, onBeforeSelect } = {}) {
 		}
 
 		if (event.ctrlKey || event.metaKey) {
+			toggleSelection(file);
+			return;
+		}
+
+		// Touch devices: with an active multi-selection, tapping another item toggles
+		// it (Google Drive pattern). Desktop keeps replace-on-click.
+		if (isCoarsePointerDevice() && selectedFileIds.value.size > 0) {
 			toggleSelection(file);
 			return;
 		}

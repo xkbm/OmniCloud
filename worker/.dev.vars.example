@@ -1,0 +1,21 @@
+# Deploy-to-Cloudflare button reads THIS file to prompt for secrets.\r\n# For local dev: copy to .dev.vars (git-ignored).\r\n#\r\n# 1. Create a free Postgres DB at https://neon.tech and paste its connection string below.\r\n# 2. Everything else can be filled during/after deploy — see SELF-HOSTING.md.
+# Values here are NEVER committed — see SELF-HOSTING.md.
+
+DATABASE_URL=postgres://user:pass@host/db?sslmode=require
+
+# 32 random bytes: node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+ENCRYPTION_KEY=
+
+# Derived: sha256("omnicloud-auth-v1:" + ENCRYPTION_KEY)
+AUTH_SECRET=
+
+# Google OAuth client from https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_REDIRECT_URI=http://localhost:8787/api/accounts/google/callback
+
+# Optional — enables the AI assistant (https://aistudio.google.com/apikey)
+GEMINI_API_KEY=
+
+# Public URL of the frontend (Pages). Defaults to localhost in dev.
+FRONTEND_URL=

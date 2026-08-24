@@ -20,9 +20,11 @@ export async function updateSaga(env, id, status, patch = {}) {
 export async function completeSaga(env, id) { return updateSaga(env, id, 'completed'); }
 
 export async function failSaga(env, id, error, pendingReconcile = false) {
+  const cause = error?.cause;
   return updateSaga(env, id, pendingReconcile ? 'pending_reconcile' : 'failed', {
     error: String(error?.message || error || 'Operation failed'),
     error_code: error?.code || null,
+    ...(cause ? { error_cause: String(cause?.message || cause || 'Unknown cause'), error_cause_status: Number(cause?.status || 0) || null } : {}),
   });
 }
 

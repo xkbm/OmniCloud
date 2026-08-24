@@ -32,7 +32,13 @@ export class TransferScheduler extends DurableObject {
     try {
       await runTransferJob(this.env, job);
     } catch (error) {
-      console.error('[transfer-scheduler] job failed:', error);
+      const cause = error?.cause;
+      console.error('[transfer-scheduler] job failed:', error?.message, {
+        code: error?.code || null,
+        status: error?.status || null,
+        cause: cause ? (cause?.message || String(cause)) : null,
+        causeStatus: cause?.status || null,
+      });
       await failTransferJob(this.env, job, error);
     }
 

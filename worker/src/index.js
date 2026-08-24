@@ -10,6 +10,7 @@ import {
   logout,
 } from './auth.js';
 import { accountsRoutes } from './routes/accounts.js';
+import { aiRoutes } from './routes/ai.js';
 import { allocationRoutes } from './routes/allocation.js';
 import { backgroundMoveRoutes } from './routes/backgroundMove.js';
 import { copyRoutes } from './routes/copy.js';
@@ -26,13 +27,21 @@ import { TransferScheduler } from '../transferScheduler.js';
 import { UploadProgress } from './uploadProgress.js';
 import { probeAllStorageAccounts } from './storage/service.js';
 import { runAutomaticRebalance } from './storage/rebalance.js';
+import { runAutoSync } from './storage/autoSync.js';
 import { reconcilePendingSagas } from './utils/sagas.js';
+import { getSiteUrl } from './utils/siteUrl.js';
+import { ensureDbInitialized } from './db-init.js';
 import { sql } from './db.js';
 
 const app = new Hono();
 
+app.use('*', async (c, next) => {
+	await ensureDbInitialized(c.env);
+	await next();
+});
+
 function getAllowedOrigin(env) {
-  return env.CORS_ORIGIN || env.FRONTEND_URL || 'http://localhost:5173';
+  return getSiteUrl(env);
 }
 
 async function enforceLoginRateLimit(c) {
@@ -59,7 +68,7 @@ app.use('/api/*', async (c, next) => {
 
 app.use('/api/*', async (c, next) => {
   try {
-    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session');
+    const token = extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || '__Host-omnicloud_session');
     c.set('user', await getUserBySession(c.env, token));
   } catch (error) {
     console.error('Auth session lookup failed:', error);
@@ -112,7 +121,7 @@ app.post('/api/auth/login', async (c) => {
 
 app.post('/api/auth/logout', async (c) => {
   try {
-    await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || 'omnicloud_session'));
+    await logout(c.env, extractSessionToken(c.req.raw, c.env.AUTH_COOKIE_NAME || '__Host-omnicloud_session'));
     return new Response(JSON.stringify({ data: authSummary(c.env, null) }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': authCookie('', c.env, 0) },
@@ -161,6 +170,7 @@ await virtualFilesRoutes(app);
 await filesRoutes(app);
 await transferRoutes(app);
 await uploadsRoutes(app);
+await aiRoutes(app);
 
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 
@@ -174,7 +184,13 @@ export async function scheduled(_event, env, ctx) {
   ctx.waitUntil(runAutomaticRebalance(env).catch((error) => {
     console.error('[rebalance] scheduled cycle failed:', error);
   }));
+  ctx.waitUntil(runAutoSync(env).catch((error) => {
+    console.error('[auto-sync] scheduled run failed:', error);
+  }));
 }
 
 export { TransferScheduler, UploadProgress };
-export default app;
+// Module workers read ONLY the default export: register both the HTTP fetch
+// handler and the cron `scheduled` handler explicitly. A bare `export default
+// app` silently dropped every scheduled job since the original deploy.
+export default { fetch: app.fetch, scheduled };

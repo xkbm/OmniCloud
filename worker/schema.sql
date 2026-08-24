@@ -38,9 +38,13 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   health_status TEXT NOT NULL DEFAULT 'healthy' CHECK (health_status IN ('healthy', 'degraded', 'offline', 'reauth_required')),
   health_checked_at TIMESTAMPTZ,
   health_failure_count INTEGER NOT NULL DEFAULT 0 CHECK (health_failure_count >= 0),
+  synced_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE cloud_accounts
+  ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ;
 
 ALTER TABLE cloud_accounts
   ADD COLUMN IF NOT EXISTS health_status TEXT NOT NULL DEFAULT 'healthy'
@@ -75,6 +79,7 @@ CREATE TABLE IF NOT EXISTS virtual_folders (
   path TEXT NOT NULL,
   name TEXT NOT NULL,
   parent_path TEXT NOT NULL DEFAULT '/',
+  is_starred BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_virtual_folders_user_path UNIQUE (user_id, path),
@@ -106,7 +111,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
 
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id TEXT PRIMARY KEY,
-  token TEXT NOT NULL UNIQUE,
+  token TEXT UNIQUE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   cloud_account_id TEXT NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
   file_name TEXT NOT NULL,
@@ -156,6 +161,15 @@ CREATE TABLE IF NOT EXISTS operation_sagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  content TEXT NOT NULL,
+  meta JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_accounts_user_provider_email ON cloud_accounts(user_id, provider, email);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id ON cloud_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_health ON cloud_accounts(user_id, health_status, health_checked_at);
@@ -172,6 +186,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(us
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_user_id ON upload_sessions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_policy ON upload_sessions(duplicate_policy, status);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_reservation ON upload_sessions(reservation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_created ON chat_messages(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_storage_reservations_account_active ON storage_reservations(cloud_account_id, status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_storage_reservations_user_status ON storage_reservations(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_operation_sagas_status ON operation_sagas(status, created_at);

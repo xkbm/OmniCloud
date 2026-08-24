@@ -5,11 +5,19 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 APP_MODE = "hosted"
-AUTH_COOKIE_NAME = "omnicloud_session"
+AUTH_COOKIE_NAME = "__Host-omnicloud_session"
 AUTH_SESSION_TTL_HOURS = "336"
 # Keep aligned with the Cloudflare request-body ceiling for the deployed plan.
 # Raise this only when the Cloudflare account/zone limit has also been raised.
 MAX_FILE_SIZE = "104857600"
+AI_MODEL = "gemini-3.5-flash-lite"
+# Google OAuth: store these as Cloudflare SECRETS (not file vars) so they survive
+# deploys and stay out of your fork. See SELF-HOSTING.md:
+#   GOOGLE_CLIENT_SECRET / GOOGLE_CLIENT_ID / GOOGLE_REDIRECT_URI
+# Public URL of YOUR Pages deployment (OAuth redirects + CORS).
+FRONTEND_URL = "https://nimbo.nimboapp.workers.dev"
+SYNC_FOLDER_MODE = "vf"
+AUTO_SYNC_INTERVAL_MINUTES = "60"
 
 [triggers]
 crons = ["*/5 * * * *"]
@@ -29,6 +37,11 @@ storage = "sqlite"
 [exports.TransferScheduler]
 type = "durable-object"
 storage = "sqlite"
+
+[assets]
+directory = "../frontend/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/ws/*"]
 
 [observability]
 enabled = true

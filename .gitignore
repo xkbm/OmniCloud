@@ -6,11 +6,25 @@ backend/node_modules/
 # Build output
 frontend/dist/
 coverage/
+worker/dist/
+worker/generated/
+worker/src/providers/legacy.js
+
+# Pages deploy artifacts (only wrangler.toml + _headers are tracked)
+pages/assets/
+pages/functions/
+pages/index.html
+pages/favicon.ico
+pages/favicon.svg
+pages/icons.svg
 
 # Environment files
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 backend/.env
 backend/.env.*
 !backend/.env.example
@@ -35,3 +49,6 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Agent memory (local only, never committed)
+AGENTS.md

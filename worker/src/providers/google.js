@@ -1,5 +1,6 @@
 import { decryptJson, encryptJson } from '../crypto.js';
 import { sql } from '../db.js';
+import { ensureVirtualFolder, upsertVirtualFolderMaterialization } from '../storage/virtualFolders.js';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const FILES_API = `${DRIVE_API}/files`;
@@ -20,6 +21,16 @@ function normalizePath(input = '/') {
 
 function escapeQuery(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function resumableUploadBody(body, size) {
+  const total = Number(size || 0);
+  if (typeof ReadableStream === 'undefined' || typeof FixedLengthStream === 'undefined') return body;
+  const stream = body instanceof ReadableStream ? body : (typeof body?.getReader === 'function' ? body : null);
+  if (!stream || !Number.isFinite(total) || total <= 0) return body;
+  const fixed = new FixedLengthStream(total);
+  stream.pipeTo(fixed.writable).catch(() => {});
+  return fixed.readable;
 }
 
 async function jsonResponse(response) {
@@ -145,7 +156,7 @@ async function listAllDriveFiles(env, account) {
   do {
     const params = new URLSearchParams({ q: "trashed = false and 'me' in owners", fields: 'nextPageToken,files(id,name,mimeType,size,parents,starred,createdTime,modifiedTime)', pageSize: '1000', orderBy: 'folder, name' });
     if (pageToken) params.set('pageToken', pageToken);
-    const data = await googleRequest(env, account, `?${params.toString()}`);
+    const data = await googleRequest(env, account, `/files?${params.toString()}`);
     files.push(...(data.files || []));
     pageToken = data.nextPageToken || '';
   } while (pageToken);
@@ -169,12 +180,73 @@ export async function syncGoogleAccount(env, userId, account) {
     return segments.length ? `/${segments.join('/')}/` : '/';
   };
   const db = sql(env);
-  await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
+  const folderMode = String(env.SYNC_FOLDER_MODE || 'fm') === 'vf';
+  // Incremental sync (auto-sync safe): upsert every record first, then delete
+  // only rows whose remote id vanished from Drive. No blanket DELETE -> listings
+  // and uploads never observe an empty metadata window mid-sync.
   for (const file of files) {
+    const isFolder = file.mimeType === FOLDER_MIME;
+    if (folderMode && isFolder) {
+      // SYNC_FOLDER_MODE=vf: folders are registered in virtual_folders (single registry)
+      // instead of mirrored into file_metadata. Inert until the flag flips.
+      const parentPath = folderPath(file);
+      const fullPath = `${parentPath}${file.name}/`;
+      const vfRow = await ensureVirtualFolder(env, userId, fullPath);
+      await upsertVirtualFolderMaterialization(env, { userId, virtualFolderId: vfRow.id, cloudAccountId: account.id, remoteFileId: file.id, remoteParentId: file.parents?.[0] || null });
+      if (Boolean(file.starred) !== Boolean(vfRow.is_starred)) {
+        await db`UPDATE virtual_folders SET is_starred=${Boolean(file.starred)},updated_at=NOW() WHERE id=${vfRow.id}`;
+      }
+      continue;
+    }
     await db`
       INSERT INTO file_metadata (id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type, cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time)
-      VALUES (${crypto.randomUUID()}, ${userId}, ${folderPath(file)}, ${file.name}, ${file.mimeType === FOLDER_MIME}, ${Boolean(file.starred)}, ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null}, ${file.createdTime || null}, ${file.modifiedTime || null})
+      VALUES (${crypto.randomUUID()}, ${userId}, ${folderPath(file)}, ${file.name}, ${isFolder}, ${Boolean(file.starred)}, ${Number(file.size || 0)}, ${file.mimeType || null}, ${account.id}, ${file.id}, ${file.parents?.[0] || null}, ${file.createdTime || null}, ${file.modifiedTime || null})
+      ON CONFLICT (cloud_account_id, remote_file_id) DO UPDATE SET
+        virtual_path=EXCLUDED.virtual_path,
+        file_name=EXCLUDED.file_name,
+        is_folder=EXCLUDED.is_folder,
+        is_starred=EXCLUDED.is_starred,
+        size=EXCLUDED.size,
+        mime_type=EXCLUDED.mime_type,
+        remote_parent_id=EXCLUDED.remote_parent_id,
+        remote_created_time=EXCLUDED.remote_created_time,
+        remote_modified_time=EXCLUDED.remote_modified_time,
+        updated_at=NOW()
     `;
+  }
+  const syncedIds = files.map((file) => file.id);
+  if (syncedIds.length) {
+    await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id} AND NOT (remote_file_id = ANY(${syncedIds}))`;
+  } else {
+    await db`DELETE FROM file_metadata WHERE user_id = ${userId} AND cloud_account_id = ${account.id}`;
+  }
+  if (folderMode) {
+    // Prune: materializations whose remote folder vanished in Drive become 'deleted';
+    // a virtual folder is removed only when its LAST active materialization disappears.
+    try {
+      const syncedFolderIds = files.filter((file) => file.mimeType === FOLDER_MIME).map((file) => file.id);
+      const staleRows = await db`
+        SELECT vfm.id AS materialization_id, vfm.virtual_folder_id, vf.path
+        FROM virtual_folder_materializations vfm
+        JOIN virtual_folders vf ON vf.id=vfm.virtual_folder_id
+        WHERE vfm.user_id=${userId} AND vfm.cloud_account_id=${account.id} AND vfm.status='active'
+          AND NOT (vfm.remote_file_id = ANY(${syncedFolderIds}))
+      `;
+      const processedPrefixes = [];
+      for (const stale of [...staleRows].sort((a, b) => a.path.length - b.path.length)) {
+        const prefix = stale.path.endsWith('/') ? stale.path : `${stale.path}/`;
+        if (processedPrefixes.some((existing) => prefix.startsWith(existing))) continue;
+        await db`UPDATE virtual_folder_materializations SET status='deleted',updated_at=NOW() WHERE id=${stale.materialization_id}`;
+        const remaining = await db`SELECT COUNT(*)::int AS remaining FROM virtual_folder_materializations WHERE virtual_folder_id=${stale.virtual_folder_id} AND status='active'`;
+        if ((remaining[0]?.remaining || 0) > 0) continue;
+        await db`DELETE FROM virtual_folder_materializations WHERE user_id=${userId} AND virtual_folder_id IN (SELECT id FROM virtual_folders WHERE user_id=${userId} AND (id=${stale.virtual_folder_id} OR left(path,char_length(${prefix}))=${prefix}))`;
+        await db`DELETE FROM virtual_folders WHERE user_id=${userId} AND (id=${stale.virtual_folder_id} OR left(path,char_length(${prefix}))=${prefix})`;
+        processedPrefixes.push(prefix);
+        console.log('[sync-vf] pruned folder absent from provider:', stale.path);
+      }
+    } catch (pruneError) {
+      console.error('[sync-vf] prune failed:', pruneError);
+    }
   }
   return { count: files.length };
 }
@@ -237,7 +309,7 @@ export async function googleFindParent(env, account, virtualPath) {
   let parentId = 'root';
   for (const segment of segments) {
     const q = `'${escapeQuery(parentId)}' in parents and trashed = false and mimeType = '${FOLDER_MIME}' and name = '${escapeQuery(segment)}'`;
-    const data = await googleRequest(env, account, `?${new URLSearchParams({ q, fields: 'files(id,name)', pageSize: '1' }).toString()}`);
+    const data = await googleRequest(env, account, `/files?${new URLSearchParams({ q, fields: 'files(id,name)', pageSize: '1' }).toString()}`);
     if (!data.files?.[0]) return null;
     parentId = data.files[0].id;
   }
@@ -264,7 +336,7 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
   let response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) },
-    body,
+    body: resumableUploadBody(body, size),
   });
   if (response.status === 401 && credentials.refreshToken) {
     const refreshed = await refreshAccessToken(env, account, credentials);
@@ -276,7 +348,7 @@ export async function googleUpload(env, account, { body, fileName, mimeType, vir
     if (!retryStart.ok) throw new Error(`Google upload session retry failed (${retryStart.status})`);
     const retryUrl = retryStart.headers.get('Location');
     if (!retryUrl) throw new Error('Google did not return a retry upload URL');
-    response = await fetch(retryUrl, { method: 'PUT', headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) }, body });
+    response = await fetch(retryUrl, { method: 'PUT', headers: { 'Content-Type': mimeType || 'application/octet-stream', ...(size ? { 'Content-Length': String(size) } : {}) }, body: resumableUploadBody(body, size) });
   }
   const result = await jsonResponse(response);
   onProgress?.(size || Number(result.size || 0));

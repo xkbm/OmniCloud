@@ -1,6 +1,7 @@
 import { requireUser, sql } from '../db.js';
 import { copyFile, copyFolder } from '../storage/transfer.js';
 import { chooseStorageBackend } from '../storage/service.js';
+import { resolveFolderDestination, resolveFolderPath } from '../storage/folderRefs.js';
 import {
   ensurePhysicalFolderPath,
   ensureVirtualFolder,
@@ -331,6 +332,14 @@ export async function copyRoutes(app) {
           WHERE fm.id=${destinationId} AND fm.user_id=${user.id} LIMIT 1
         `;
         destination = rows[0] || null;
+        if (!destination) {
+          const resolvedVf = await resolveFolderDestination(db, user.id, destinationId);
+          if (resolvedVf && resolvedVf.kind === 'vf' && resolvedVf.cloudAccountId) {
+            const accountRows = await db`SELECT * FROM cloud_accounts WHERE id=${resolvedVf.cloudAccountId} AND user_id=${user.id} LIMIT 1`;
+            const account = accountRows[0];
+            if (account) destination = { id: resolvedVf.id, virtual_path: resolvedVf.parentPath, file_name: resolvedVf.name, is_folder: true, remote_file_id: resolvedVf.remoteParentId, ...account, account_status: account.status };
+          }
+        }
       } else if (requestedPath !== null && normalizePath(requestedPath) !== '/') {
         const path = normalizePath(requestedPath);
         const rows = await db`
@@ -340,6 +349,14 @@ export async function copyRoutes(app) {
           LIMIT 1
         `;
         destination = rows[0] || null;
+        if (!destination) {
+          const resolvedPathVf = await resolveFolderPath(db, user.id, path);
+          if (resolvedPathVf && resolvedPathVf.kind === 'vf' && resolvedPathVf.cloudAccountId) {
+            const accountRows2 = await db`SELECT * FROM cloud_accounts WHERE id=${resolvedPathVf.cloudAccountId} AND user_id=${user.id} LIMIT 1`;
+            const account2 = accountRows2[0];
+            if (account2) destination = { id: resolvedPathVf.id, virtual_path: resolvedPathVf.parentPath, file_name: resolvedPathVf.name, is_folder: true, remote_file_id: resolvedPathVf.remoteParentId, ...account2, account_status: account2.status };
+          }
+        }
       }
       if (requestedPath === null && !destinationId) return c.json({ error: 'Destination folder is required', code: 'DESTINATION_REQUIRED' }, 400);
       if (destination) {

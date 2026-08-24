@@ -1,5 +1,6 @@
 import { completeGoogleOAuth, googleAuthorizationUrl } from '../providers/google.js';
 import { requireUser, sql } from '../db.js';
+import { getSiteUrl } from '../utils/siteUrl.js';
 
 async function consumeState(env, state, provider) {
   const db = sql(env);
@@ -41,7 +42,7 @@ export async function googleRoutes(app) {
   });
 
   app.get('/api/accounts/google/callback', async (c) => {
-    const frontend = new URL(c.env.FRONTEND_URL || c.env.CORS_ORIGIN || 'http://localhost:5173');
+    const frontend = new URL(getSiteUrl(c.env));
     frontend.pathname = '/quota';
     try {
       const errorParam = c.req.query('error');

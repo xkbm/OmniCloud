@@ -39,7 +39,7 @@ function onError() {
 
 <template>
 	<div v-if="isVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-8" @click="onBackdropClick">
-		<div class="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-white text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-slate-900 dark:text-slate-100" @click.stop>
+		<div class="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-white text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-[#07090d] dark:text-slate-100" @click.stop>
 			<div class="flex items-center justify-between gap-4 border-b border-[#e8eaed] px-5 py-4 dark:border-slate-800">
 				<div class="min-w-0">
 					<p class="truncate text-base font-semibold">{{ displayName }}</p>
@@ -61,7 +61,7 @@ function onError() {
 				<iframe v-else-if="['pdf', 'document', 'audio'].includes(props.file?.previewType)" :src="props.file?.previewUrl" class="h-[75vh] w-full border-0" :title="t('preview.document')" @load="onLoad" />
 				<div v-else class="grid min-h-[420px] place-items-center px-6 text-center text-sm text-[#5f6368] dark:text-slate-400">
 					<div>
-						<div class="mx-auto grid size-16 place-items-center rounded-full bg-[#e8f0fe] text-[#1a73e8] dark:bg-slate-800">
+						<div class="mx-auto grid size-16 place-items-center rounded-full bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#12161d]">
 							<IconPlayerPlay :size="28" :stroke="1.8" />
 						</div>
 						<p class="mt-4">{{ t('preview.notAvailable') }}</p>

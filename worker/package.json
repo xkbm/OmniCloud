@@ -7,7 +7,9 @@
     "prepare:legacy": "node scripts/prepare-legacy.mjs",
     "dev": "npm run prepare:legacy && wrangler dev",
     "deploy": "npm run prepare:legacy && wrangler deploy",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "db:apply": "node scripts/db-apply.mjs",
+    "build": "cd .. && pnpm install --frozen-lockfile && pnpm --filter frontend build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1065.0",

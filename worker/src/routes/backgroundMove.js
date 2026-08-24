@@ -3,6 +3,7 @@ import { getProviderCapabilities } from '../storage/capabilities.js';
 import { createTransferJob } from '../storage/jobs.js';
 import { MAX_RECURSIVE_TRANSFER_NODES } from '../storage/transfer.js';
 import { releaseStorageReservation, reserveStorage } from '../storage/service.js';
+import { resolveFolderDestination } from '../storage/folderRefs.js';
 
 const DEFAULT_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
@@ -39,7 +40,22 @@ async function findDestination(db, userId, body) {
     WHERE fm.id=${destinationId} AND fm.user_id=${userId} AND fm.is_folder=TRUE
     LIMIT 1
   `;
-  return rows[0] || null;
+  if (rows[0]) return rows[0];
+  // Dual-read: virtual_folders is becoming the single folder registry (P1).
+  const resolved = await resolveFolderDestination(db, userId, destinationId);
+  if (!resolved || resolved.kind !== 'vf' || !resolved.cloudAccountId) return null;
+  return {
+    id: resolved.id,
+    user_id: userId,
+    file_name: resolved.name,
+    is_folder: true,
+    cloud_account_id: resolved.cloudAccountId,
+    remote_file_id: resolved.remoteParentId,
+    remote_parent_id: null,
+    virtual_path: resolved.parentPath,
+    destination_provider: 'google_drive',
+    destination_account_status: 'active',
+  };
 }
 
 export async function backgroundMoveRoutes(app) {
