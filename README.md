@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="frontend/src/assets/nimbo-logo.svg" alt="Nimbo" width="180">
 </p>
 
@@ -11,7 +11,7 @@
 
 > ⚠️ **Beta.** Funciona, pero es joven. Puedes encontrar errores. Si despliegas, asume que las cosas pueden cambiar entre versiones.
 
-Nimbo unifica tus cuentas de almacenamiento en la nube detrás de un solo filesystem. Conectas Google Drive (por ahora), y Nimbo te presenta todo como una carpeta coherente donde puedes subir, organizar y mover archivos entre cuentas sin pensar en qué servicio está cada cosa.
+Nimbo unifica varias cuentas de Google Drive (y próximamente más proveedores) detrás de un solo filesystem. Subes, organizas y mueves archivos entre cuentas sin pensar en qué servicio está cada cosa.
 
 Los archivos viven en tu proveedor. Nimbo guarda los metadatos en Postgres y actúa como capa intermedia — no duplica nada entre servicios.
 
