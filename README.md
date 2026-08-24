@@ -2,93 +2,61 @@
   <img src="frontend/src/assets/nimbo-logo.svg" alt="Nimbo" width="180">
 </p>
 
+<h1 align="center">Nimbo</h1>
+
 <p align="center">
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/xkbm/OmniCloud"><img alt="Deploy to Cloudflare" src="https://img.shields.io/badge/Deploy_to_Cloudflare-Free-380F76?style=for-the-badge&logo=cloudflare&logoColor=white"></a>
-  <a href="SELF-HOSTING.md"><img alt="Docs" src="https://img.shields.io/badge/Self--hosting_guide-ES%2FEN-1a73e8?style=for-the-badge"></a>
+  <a href="SELF-HOSTING.md"><img alt="Self-hosting guide" src="https://img.shields.io/badge/Gu%C3%ADa_self--hosting-ES%2FEN-1a73e8?style=for-the-badge"></a>
 </p>
-# Nimbo ☁️
 
-**Todas tus nubes, una sola casa.**
+> ⚠️ **Beta.** Funciona, pero es joven. Puedes encontrar errores. Si despliegas, asume que las cosas pueden cambiar entre versiones.
 
-> ⚠️ **BETA — Proyecto en desarrollo activo.** Nimbo es funcional pero joven: muchas características están en pruebas y es probable que encuentres errores. Si decides desplegarlo, hazlo sabiendo que las cosas pueden romperse entre versiones. Reporta problemas en [Issues](https://github.com/xkbm/OmniCloud/issues).
+Nimbo unifica tus cuentas de almacenamiento en la nube detrás de un solo filesystem. Conectas Google Drive (por ahora), y Nimbo te presenta todo como una carpeta coherente donde puedes subir, organizar y mover archivos entre cuentas sin pensar en qué servicio está cada cosa.
 
+Los archivos viven en tu proveedor. Nimbo guarda los metadatos en Postgres y actúa como capa intermedia — no duplica nada entre servicios.
 
+Es un fork de [OmniCloud](https://github.com/dimartarmizi/OmniCloud) reescrito para correr exclusivamente en Cloudflare Workers.
 
-Nimbo es un espacio de trabajo unificado para tus almacenamientos en la nube: un filesystem virtual que presenta Google Drive (y próximamente más proveedores) como una sola carpeta coherente, con asistente de IA integrado, apps móviles táctiles y sincronización automática. Tus archivos siguen viviendo en tu proveedor — Nimbo solo los hace sentir como uno.
+## Qué hace
 
-> _Nimbo es un fork evolucionado de [OmniCloud](https://github.com/dimartarmizi/OmniCloud). Gracias por la base._
+- **Filesystem virtual**: carpetas lógicas separadas del proveedor físico. Mueves un archivo de Drive a otra cuenta sin saber (ni importar) dónde está.
+- **Multi-cuenta con estrategias de asignación**: eliges cómo se reparten los archivos entre cuentas — least-used, weighted round-robin, o manual arrastrando.
+- **Transfer engine**: movimientos entre cuentas distintas pasan por un motor con sagas y reconciliación automática si algo falla a mitad.
+- **Asistente de IA**: le hablas en español y busca, organiza o crea carpetas por ti usando las herramientas del sistema.
+- **Auto-sync horario**: detecta cambios hechos directamente en el proveedor y corrige el estado local.
+- **Interfaz móvil táctil**: tap abre, long-press selecciona, tab bar inferior con FAB.
+- Búsqueda global (Ctrl+K), modo oscuro, i18n ES/EN.
 
-## ✨ Características
+## Stack
 
-- 🗂️ **Filesystem virtual** — carpetas lógicas desacopladas del proveedor físico, con materializaciones por cuenta
-- 🔀 **Multi-cuenta con estrategias** — el allocator decide dónde vive cada archivo (least-used, weighted, round-robin o manual con drag & drop)
-- 🚚 **Movimientos cross-account** — transfer engine con sagas y reconciliación automática
-- 🤖 **Asistente de IA** — pídele en lenguaje natural que busque, organice, mueva o cree carpetas (Gemini)
-- 🔄 **Auto-sync horario** — el sistema se autocura contra drift sin que toques nada
-- 📱 **Móvil de verdad** — tap abre, long-press selecciona, tab bar + FAB, bottom-sheets
-- 🔎 **Búsqueda global** con Ctrl/Cmd+K y navegación por teclado
-- 🌗 Modo claro/oscuro · 🇪🇸🇺🇸 i18n ES/EN
+Vue 3 / Tailwind / Vite en el frontend. Hono sobre Cloudflare Workers en el backend, con Durable Objects (SQLite) para estado efímero. Neon Postgres como base de datos serverless. Google Drive API v3 para almacenamiento. Todo corre en planes gratuitos.
 
-## 🧱 Stack
-
-| Capa | Tecnología |
-|---|---|
-| Frontend | Vue 3 · Vite · Tailwind CSS |
-| API | Cloudflare Workers · Hono |
-| Estado / tiempo real | Durable Objects (SQLite) |
-| Base de datos | [Neon](https://neon.tech) Postgres (serverless) |
-| Proveedores | Google Drive API v3 |
-| IA | Google Gemini (opcional) |
-
-## 🏗️ Arquitectura en una línea
-
-```
-Vue SPA (Pages/assets) ──► Worker Hono ──► Neon Postgres (metadatos = fuente de verdad)
-                                   └──────► APIs de proveedores (archivos físicos)
-```
-
-Los metadatos viven en Postgres; los archivos físicos nunca se duplican entre proveedores. Toda operación pasa por sagas con reconciliación para garantizar consistencia.
-
-## 🚀 Desarrollo local
+## Desarrollo local
 
 ```bash
 corepack enable && pnpm install
 
-# 1. Aplica el esquema a tu base (idempotente)
+# Base de datos (idempotente)
 cd worker
 node scripts/db-apply.mjs "$DATABASE_URL"
 
-# 2. API en local (usa .dev.vars — copia .dev.vars.example)
+# API
 pnpm dev
 
-# 3. Frontend en otra terminal
+# Frontend (otra terminal)
 pnpm --filter frontend dev
 ```
 
-## ☁️ Despliegue en Cloudflare
+## Despliegue
 
-Requisitos: cuenta gratuita de Cloudflare + [Neon](https://neon.tech) gratis. Los Durable Objects usan el plan gratuito (backend SQLite).
+Ver [SELF-HOSTING.md](SELF-HOSTING.md) para la guía completa. Resumen:
 
 ```bash
-# Worker (API)
 cd worker && npx wrangler deploy
-
-# Frontend (Pages) — conecta tu fork desde el dashboard de Cloudflare,
-# o sube el build manualmente:
-pnpm --filter frontend build
-npx wrangler pages deploy ../pages --project-name nimbo
 ```
 
-Secrets necesarios en el Worker (`npx wrangler secret put <NOMBRE>`):
+Secrets necesarios: `DATABASE_URL`, `ENCRYPTION_KEY`, `AUTH_SECRET`, y opcionalmente `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI` + `GEMINI_API_KEY`.
 
-| Secret | Para qué |
-|---|---|
-| `DATABASE_URL` | Cadena de conexión Neon |
-| `ENCRYPTION_KEY` | Cifrado de credenciales de proveedores |
-| `AUTH_SECRET` | Firma de sesiones |
-| `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI` | Login con Google Drive |
-| `GEMINI_API_KEY` | _(opcional)_ Asistente de IA |
+## Licencia
 
-## 📄 Licencia
-
-[MIT](LICENSE)
+[MIT](LICENSE) — incluye crédito al proyecto original.
