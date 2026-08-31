@@ -1,12 +1,22 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { neon } from '@neondatabase/serverless';
 
 const PASSWORD_MIN_LENGTH = 8;
 const SESSION_BYTES = 32;
 
-function getSql(env) {
+// Cache the neon client at module level to avoid re-initialization on every request
+let _authDbCache = null;
+
+async function getSql(env) {
   if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not configured');
-  return neon(env.DATABASE_URL);
+  
+  // Reuse the same neon client across requests within the same Worker instance
+  if (!_authDbCache || !_authDbCache._valid) {
+    const { neon } = await import('@neondatabase/serverless');
+    _authDbCache = neon(env.DATABASE_URL);
+    _authDbCache._valid = true;
+  }
+  
+  return _authDbCache;
 }
 
 function getAuthSecret(env) {
@@ -48,7 +58,7 @@ function sessionHash(env, token) {
 }
 
 export async function getUserByEmail(env, email) {
-  const sql = getSql(env);
+  const sql = await getSql(env);
   const normalizedEmail = normalizeEmail(email);
   const result = await sql`
     SELECT id, email, password_hash, is_local, created_at, updated_at
@@ -62,7 +72,7 @@ export async function getUserByEmail(env, email) {
 export async function getUserBySession(env, token) {
   if (!token) return null;
 
-  const sql = getSql(env);
+  const sql = await getSql(env);
   const tokenHash = sessionHash(env, token);
   const result = await sql`
     SELECT u.id, u.email, u.password_hash, u.is_local, u.created_at, u.updated_at,
@@ -126,7 +136,7 @@ export async function login(env, email, password) {
     throw new Error('Invalid email or password');
   }
 
-  const sql = getSql(env);
+  const sql = await getSql(env);
   const token = randomBytes(SESSION_BYTES).toString('hex');
   const tokenHash = sessionHash(env, token);
   const sessionId = randomUUID();
@@ -144,7 +154,7 @@ export async function registerFirstUser(env, email, password) {
   if (env.APP_MODE !== 'hosted') throw new Error('Registration is only available in hosted mode');
   if (String(password || '').length < PASSWORD_MIN_LENGTH) throw new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
 
-  const sql = getSql(env);
+  const sql = await getSql(env);
   const count = await sql`SELECT COUNT(*)::int AS total FROM users`;
   if ((count[0]?.total || 0) > 0) throw Object.assign(new Error('Registration is closed'), { status: 403 });
 
@@ -163,7 +173,7 @@ export async function registerFirstUser(env, email, password) {
 
 export async function logout(env, token) {
   if (!token) return;
-  const sql = getSql(env);
+  const sql = await getSql(env);
   const tokenHash = sessionHash(env, token);
   await sql`DELETE FROM auth_sessions WHERE token_hash = ${tokenHash}`;
 }

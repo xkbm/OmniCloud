@@ -13,11 +13,20 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({
 	connectionString: DATABASE_URL,
-	max: 2,
+	max: 10,
 	idleTimeoutMillis: 30_000,
 	connectionTimeoutMillis: 30_000,
 	ssl: DATABASE_URL.includes('sslmode=') ? undefined : { rejectUnauthorized: false },
 });
+
+const preparedStatements = new Map();
+
+function getCachedStatement(key, sql) {
+	if (!preparedStatements.has(key)) {
+		preparedStatements.set(key, rawDb.prepare(sql));
+	}
+	return preparedStatements.get(key);
+}
 
 async function neonQueryWithRetry(query, values = [], options = {}) {
 	const retries = options.retries ?? 5;
@@ -42,6 +51,22 @@ async function neonQueryWithRetry(query, values = [], options = {}) {
 
 	throw lastError;
 }
+
+export async function warmupDatabase() {
+	const queries = [
+		{ key: 'users_by_id', sql: 'SELECT * FROM users WHERE id = ?' },
+		{ key: 'cloud_accounts_by_user', sql: "SELECT * FROM cloud_accounts WHERE user_id = ? AND status = 'active'" },
+		{ key: 'file_metadata_by_user_path', sql: 'SELECT * FROM file_metadata WHERE user_id = ? AND virtual_path = ?' },
+		{ key: 'file_metadata_by_user_id', sql: 'SELECT * FROM file_metadata WHERE user_id = ? AND id = ?' },
+		{ key: 'auth_sessions_by_token', sql: 'SELECT * FROM auth_sessions WHERE token_hash = ?' },
+	];
+
+	for (const { key, sql } of queries) {
+		getCachedStatement(key, sql);
+	}
+}
+
+export { getCachedStatement };
 
 await neonQueryWithRetry('SELECT 1');
 

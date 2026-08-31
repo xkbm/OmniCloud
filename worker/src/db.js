@@ -1,8 +1,21 @@
 import { neon } from '@neondatabase/serverless';
 
+// Global connection cache for the Worker instance lifetime
+// This avoids creating new HTTP connections on every request
+let _dbCache = null;
+
 export function sql(env) {
   if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not configured');
-  return neon(env.DATABASE_URL);
+  
+  // Reuse the same neon client across requests within the same Worker instance
+  // Neon's client is already optimized for serverless, but caching at the
+  // module level reduces initialization overhead
+  if (!_dbCache || !_dbCache._valid) {
+    _dbCache = neon(env.DATABASE_URL);
+    _dbCache._valid = true;
+  }
+  
+  return _dbCache;
 }
 
 export async function requireUser(c) {
